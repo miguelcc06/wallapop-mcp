@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>Sin filtrar por nombre, lista las categorías raíz de Wallapop. ¿Cuántas hay? Responde solo con el número.</question>
+    <answer>18</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Entre las categorías raíz, localiza la que usa el icono house. ¿Cuál es su id numérico?</question>
+    <answer>200</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>La categoría raíz cuyo icono es robot agrupa la electrónica. ¿Cuántas subcategorías directas declara child_count?</question>
+    <answer>6</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Busca en el árbol la categoría raíz cuyo icono es ball. ¿Cuántas hijas directas tiene?</question>
+    <answer>16</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Identifica la categoría raíz pensada para ofertas de trabajo (icono jobs). ¿Cuál es su id?</question>
+    <answer>21000</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Hay una raíz marcada con el icono ghost, usada como cajón de sastre. ¿Cuál es su id?</question>
+    <answer>12485</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>La raíz con icono helmet cubre recambios de motor. ¿Cómo se llama, exactamente como la devuelve la tool?</question>
+    <answer>Motor y accesorios</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Localiza la raíz de servicios (icono toolbox). ¿Cuántas subcategorías directas tiene?</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Busca por el texto Videojuegos y quédate con la categoría cuyo nombre es exactamente Videojuegos, no las de merchandising ni manuales. ¿Cuál es el id de su padre?</question>
+    <answer>24131</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En esa misma búsqueda de Videojuegos, la categoría de consolas y juegos que cuelga directamente de Tecnología y electrónica se llama «Gaming: consolas y videojuegos». ¿Cuál es el id del padre de esa categoría?</question>
+    <answer>24200</answer>
+  </qa_pair>
+</evaluation>
