@@ -1,4 +1,23 @@
-# wallapop-intel
+<div align="center">
+  <img src="./assets/banner.png" width="100%" alt="wallapop-mcp banner" />
+
+  <br />
+  <br />
+
+  # 🛒 wallapop-mcp
+
+  **Servidor MCP de solo lectura: inteligencia de mercado sobre Wallapop para agentes**
+
+  <p align="center">
+    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+" />
+    <img src="https://img.shields.io/badge/FastMCP-2.10+-00C7B7?style=for-the-badge" alt="FastMCP 2.10+" />
+    <img src="https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
+    <img src="https://img.shields.io/badge/HTTPX-0.27+-0B6F97?style=for-the-badge" alt="HTTPX 0.27+" />
+    <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="MIT" />
+  </p>
+</div>
+
+---
 
 Servidor MCP (`wallapop_mcp`) de **solo lectura** para dar a un agente inteligencia de mercado sobre Wallapop en España. No publica, no compra y no envía mensajes.
 
