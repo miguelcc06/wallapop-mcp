@@ -1,8 +1,10 @@
-"""Registro de todas las tools wp_*."""
+"""Registro de todas las herramientas MCP de Wallapop."""
+
+from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from wallapop_intel.tools import catalog, lots, market, mine, profit, ranking, watch
+from wallapop_intel.tools import catalog, flip, lots, market, mine, profit, ranking, watch
 
 
 def register_all(mcp: FastMCP) -> None:
@@ -13,3 +15,4 @@ def register_all(mcp: FastMCP) -> None:
     profit.register(mcp)
     watch.register(mcp)
     mine.register(mcp)
+    flip.register(mcp)
