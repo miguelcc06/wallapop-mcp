@@ -98,6 +98,22 @@ El argumento de cada tool es un objeto `params`. Todas devuelven JSON estructura
 | `wp_watchlist_snapshot` | Lee ahora lo vigilado y lo guarda |
 | `wp_my_items` | Tus anuncios públicos, con pista de precio |
 | `wp_my_item_advice` | Diagnóstico de un anuncio tuyo |
+| `wp_search_lots` | Busca y clasifica lotes, packs, despieces y urgencias en la muestra |
+| `wp_estimate_profit` | Margen neto local. Sin importes de checkout usa un techo no oficial y fiabilidad baja |
+| `wp_watchlist_list` | Lista la watchlist local sin llamar a Wallapop |
+
+`wp_estimate_profit` no consulta tarifas en vivo. Wallapop publica los tramos (hasta 2 / 5 / 10 / 20 / 30 kg) y que, si no eliges peso, se factura el de 5 kg, pero no el precio de cada tramo ni el de la Protección. Pasa `shipping_eur` y `protection_eur` vistos en el checkout para fiabilidad alta. El recargo voluminoso publicado es 4,50 EUR (`bulky_fee_eur`). La puerta por defecto pasa solo si el ROI es **mayor** que 30 % o el neto es **mayor** que 20 EUR.
+
+## Skills del agente
+
+Procedimientos en `.agents/skills/` (y la misma copia en `.cursor/skills/`):
+
+| Skill | Cuándo |
+| --- | --- |
+| `wallapop-deal-hunter` | Chollos líquidos de informática, gaming y electrónica |
+| `wallapop-lot-flipper` | Lotes, torres y despiece frente a reventa montada |
+| `wallapop-listing-optimizer` | Títulos, precio y anuncios propios estancados |
+| `wallapop-market-watcher` | Watchlist, bajadas y velocidad de salida de la muestra |
 
 Ejemplo de argumentos de búsqueda:
 

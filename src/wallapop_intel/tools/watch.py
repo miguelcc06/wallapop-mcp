@@ -6,7 +6,13 @@ from fastmcp import FastMCP
 
 from wallapop_intel.context import client, store
 from wallapop_intel.insights import apply_engagement
-from wallapop_intel.models import WatchAddInput, WatchRemoveInput, WatchResponse, WatchSnapshotInput
+from wallapop_intel.models import (
+    WatchAddInput,
+    WatchListInput,
+    WatchRemoveInput,
+    WatchResponse,
+    WatchSnapshotInput,
+)
 from wallapop_intel.normalize import to_card
 from wallapop_intel.tools.common import fail, snapshot_card
 
@@ -27,6 +33,12 @@ _SNAP = {
     "destructiveHint": False,
     "idempotentHint": False,
     "openWorldHint": True,
+}
+_LIST = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
 }
 
 
@@ -64,6 +76,21 @@ def register(mcp: FastMCP) -> None:
                 summary=f"Eliminadas {removed} entradas para {params.kind}:{params.key}.",
                 entries=entries,
             )
+        except Exception as exc:
+            fail(exc)
+
+    @mcp.tool(name="wp_watchlist_list", title="Listar vigilancia", annotations=_LIST)
+    async def wp_watchlist_list(params: WatchListInput) -> WatchResponse:
+        """Devuelve la watchlist local sin llamar a Wallapop ni crear snapshots.
+
+        Returns:
+            WatchResponse.entries con kind, key, label y created_at.
+        """
+        try:
+            entries = store().watch_list()
+            lines = [f"- {row.get('kind')}:{row.get('key')} ({row.get('label') or 'sin etiqueta'})" for row in entries]
+            body = "\n".join(lines) if lines else "Vacía. Añade con wp_watchlist_add."
+            return WatchResponse(summary=f"# Watchlist ({len(entries)})\n\n{body}", entries=entries)
         except Exception as exc:
             fail(exc)
 

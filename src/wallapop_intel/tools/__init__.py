@@ -2,7 +2,7 @@
 
 from fastmcp import FastMCP
 
-from wallapop_intel.tools import catalog, market, mine, ranking, watch
+from wallapop_intel.tools import catalog, flip, market, mine, ranking, watch
 
 
 def register_all(mcp: FastMCP) -> None:
@@ -11,3 +11,4 @@ def register_all(mcp: FastMCP) -> None:
     market.register(mcp)
     watch.register(mcp)
     mine.register(mcp)
+    flip.register(mcp)

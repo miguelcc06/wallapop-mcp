@@ -115,6 +115,10 @@ class WatchSnapshotInput(_Strict):
     response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
 
 
+class WatchListInput(_Strict):
+    response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
+
+
 class MyItemsInput(_Strict):
     limit: int = Field(default=10, ge=1, le=20)
     response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
@@ -300,3 +304,93 @@ class AdviceResponse(BaseModel):
     photo_count: int | None = None
     recommendations: list[str]
     competitor_count: int
+
+
+class LotFocus(str, Enum):
+    any = "any"
+    lot = "lot"
+    pack = "pack"
+    teardown = "teardown"
+    urgent = "urgent"
+
+
+class WeightBracket(str, Enum):
+    up_to_2kg = "up_to_2kg"
+    up_to_5kg = "up_to_5kg"
+    up_to_10kg = "up_to_10kg"
+    up_to_20kg = "up_to_20kg"
+    up_to_30kg = "up_to_30kg"
+
+
+class LotsInput(_Strict):
+    keywords: str = Field(..., min_length=2, max_length=100, description="Producto base, p. ej. 'torre oficina'. No hace falta añadir 'lote'.")
+    focus: LotFocus = Field(default=LotFocus.lot, description="lot | pack | teardown | urgent | any")
+    min_price: float | None = Field(default=None, ge=0, le=1_000_000)
+    max_price: float | None = Field(default=None, ge=0, le=1_000_000)
+    category_id: int | None = Field(default=None, ge=1)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    distance_km: int | None = Field(default=None, ge=1, le=500)
+    order_by: OrderBy = Field(default=OrderBy.newest)
+    timeframe: Timeframe = Field(default=Timeframe.any)
+    limit: int = Field(default=20, ge=1, le=40)
+    cursor: str | None = Field(default=None, description="next_cursor de la página anterior")
+    response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
+
+
+class LotHit(BaseModel):
+    item: ItemCard
+    kind: str
+    kinds: list[str]
+    signals: list[str]
+    why: str
+
+
+class LotsResponse(BaseModel):
+    summary: str
+    keywords_used: str
+    focus: str
+    scanned: int
+    count: int
+    hits: list[LotHit]
+    next_cursor: str | None = None
+    note: str
+
+
+class ProfitInput(_Strict):
+    buy_price_eur: float = Field(..., ge=0, le=1_000_000, description="Precio de compra del anuncio, EUR")
+    sell_price_eur: float = Field(..., ge=0, le=1_000_000, description="Precio de reventa esperado, EUR")
+    weight_kg: float | None = Field(default=None, gt=0, le=80, description="Peso con embalaje. Elige el tramo oficial si cabe en 30 kg.")
+    weight_bracket: WeightBracket | None = Field(
+        default=None,
+        description="up_to_2kg | up_to_5kg | up_to_10kg | up_to_20kg | up_to_30kg. Si omites peso y tramo, se usa hasta 5 kg (tarifa por defecto de Wallapop).",
+    )
+    shipping_eur: float | None = Field(default=None, ge=0, le=500, description="Envío que paga el comprador, visto en checkout. Si falta, techo de referencia no oficial.")
+    protection_eur: float | None = Field(default=None, ge=0, le=500, description="Protección Wallapop vista en checkout. Si falta, techo de referencia no oficial.")
+    packaging_eur: float = Field(default=0, ge=0, le=200, description="Embalaje que paga el vendedor en la reventa")
+    home_pickup_eur: float = Field(default=0, ge=0, le=100, description="Recogida a domicilio descontada al vender. 0 si entregas en punto.")
+    bulky_fee_eur: float = Field(default=0, ge=0, le=50, description="Recargo voluminoso. El publicado es 4.50 EUR si supera 30 kg o 120 cm.")
+    min_roi: float = Field(default=0.30, ge=0, le=10, description="Umbral exclusivo de ROI. Pasa si roi > min_roi.")
+    min_net_eur: float = Field(default=20, ge=0, le=100_000, description="Umbral exclusivo de beneficio. Pasa si net > min_net_eur.")
+
+
+class ProfitResponse(BaseModel):
+    summary: str
+    buy_price_eur: float
+    sell_price_eur: float
+    weight_bracket: str
+    inbound_shipping_eur: float
+    inbound_protection_eur: float
+    acquisition_eur: float
+    seller_deductions_eur: float
+    proceeds_eur: float
+    net_eur: float
+    roi: float | None
+    passes: bool
+    passes_roi: bool
+    passes_net: bool
+    cost_is_ceiling: bool
+    reliability: str
+    method: str
+    assumptions: list[str]
+    note: str

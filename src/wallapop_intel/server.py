@@ -18,6 +18,7 @@ mcp = FastMCP(
         "Inteligencia de mercado de Wallapop en solo lectura. "
         "Las visitas y favoritos de la ficha (wp_get_item / wp_item_metrics) son reales. "
         "El listado de búsqueda no los trae. El histórico de precios solo existe desde el primer snapshot local. "
+        "wp_estimate_profit no llama a Wallapop: sin importes de checkout marca fiabilidad baja. "
         "No hay tools de compra, publicación ni mensajes."
     ),
 )
