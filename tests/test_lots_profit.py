@@ -79,3 +79,74 @@ def test_estimate_resell_profit_roi() -> None:
 
 def test_weight_kg_from_band() -> None:
     assert weight_kg_from_band("kg_5_10") == 7.5
+
+
+def test_international_shipping_tiers() -> None:
+    low, _ = shipping_cost_eur(1.0, conservative=False, is_international=True)
+    high, _ = shipping_cost_eur(1.0, conservative=True, is_international=True)
+    assert low == 5.95
+    assert high == 6.95
+
+    mid_low, _ = shipping_cost_eur(4.0, conservative=False, is_international=True)
+    mid_high, _ = shipping_cost_eur(4.0, conservative=True, is_international=True)
+    assert mid_low == 7.95
+    assert mid_high == 8.95
+
+    ten, _ = shipping_cost_eur(8.0, conservative=True, is_international=True)
+    assert ten == 11.95
+    twenty, _ = shipping_cost_eur(15.0, conservative=False, is_international=True)
+    assert twenty == 16.95
+    over, _ = shipping_cost_eur(25.0, conservative=True, is_international=True)
+    assert over == 24.95
+
+    domestic, _ = shipping_cost_eur(1.0, conservative=True, is_international=False)
+    assert domestic == 3.95
+
+
+def test_estimate_resell_profit_international_exact() -> None:
+    result = estimate_resell_profit(
+        purchase_price=50.0,
+        expected_resale_price=100.0,
+        weight_kg=1.0,
+        include_outbound_shipping=True,
+        include_inbound_shipping=True,
+        include_buyer_protection=True,
+        other_costs=1.0,
+        conservative_shipping=True,
+        is_international=True,
+    )
+    outbound = 6.95
+    inbound = 6.95
+    protection = 7.50
+    other = 1.0
+    gross = 50.0
+    total = round(outbound + inbound + protection + other, 2)
+    net = round(gross - total, 2)
+    assert result["is_international"] is True
+    assert result["outbound_shipping_eur"] == outbound
+    assert result["inbound_shipping_eur"] == inbound
+    assert result["buyer_protection_eur"] == protection
+    assert result["other_costs"] == other
+    assert result["gross_margin"] == gross
+    assert result["total_costs"] == total
+    assert result["net_profit"] == net
+    assert result["net_profit"] == 27.60
+    assert result["roi_percent"] == round(net / 50.0 * 100, 2)
+
+
+def test_estimate_resell_profit_international_low_tier() -> None:
+    result = estimate_resell_profit(
+        purchase_price=80.0,
+        expected_resale_price=120.0,
+        weight_kg=4.0,
+        include_outbound_shipping=True,
+        include_buyer_protection=False,
+        conservative_shipping=False,
+        is_international=True,
+    )
+    assert result["outbound_shipping_eur"] == 7.95
+    assert result["buyer_protection_eur"] == 0.0
+    assert result["gross_margin"] == 40.0
+    assert result["net_profit"] == round(40.0 - 7.95, 2)
+    assert result["roi_percent"] == round(result["net_profit"] / 80.0 * 100, 2)
+    assert result["is_international"] is True

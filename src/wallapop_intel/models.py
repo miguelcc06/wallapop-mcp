@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Strict(BaseModel):
@@ -147,10 +147,18 @@ class EstimateProfitInput(_Strict):
         default=True,
         description="Resta la protección comprador (~2.50€ + 5% del precio de venta) como coste conservador",
     )
+    is_international: bool = Field(
+        default=False,
+        description="Indica si el envío es internacional/transfronterizo, ej. desde Portugal o Italia",
+    )
     other_costs: float = Field(default=0.0, description="Gastos extra (embalaje, comisiones, etc.) en EUR", ge=0, le=100_000)
     conservative_shipping: bool = Field(
         default=True,
         description="Si true, usa el extremo alto del tramo de envío cuando hay rango",
+    )
+    is_international: bool = Field(
+        default=False,
+        description="Indica si el envío es internacional/transfronterizo, ej. desde Portugal o Italia",
     )
     response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
 
@@ -356,8 +364,11 @@ class ProfitEstimateResponse(BaseModel):
     buyer_protection_eur: float
     other_costs: float
     total_costs: float
+    total_acquisition_cost: float
+    is_international: bool
     weight_kg_used: float
     weight_band: str | None
+    is_international: bool = False
     assumptions: list[str]
     note: str
 

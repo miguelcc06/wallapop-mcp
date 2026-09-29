@@ -14,6 +14,19 @@ score = descuento*100 + recencia. No usa reputación si no se ha pedido el vende
 Ganadores: agrupación por las 3 primeras palabras significativas del título.
 score = demanda_media (favoritos y visitas de la muestra con ficha) / (1 + log(n))
         * (1 + (p75-p25)/mediana). Requiere al menos 3 anuncios en el grupo.
+
+Lotes (wp_search_lots): señales en título y descripción (lote, pack, para
+piezas, averiado, no enciende, urge). opportunity_score =
+0,45*signal + 0,35*precio_vs_mediana + 0,20*urgencia. Cifra estimada.
+
+Rentabilidad (wp_estimate_profit): margen bruto = venta − compra.
+Costes = envío venta + envío compra + protección comprador
+(2,50 EUR + 5 % del precio de venta, si se incluye) + otros gastos.
+El envío usa la tabla nacional o la internacional/transfronteriza
+(Portugal o Italia hacia España) según is_international.
+Coste de adquisición = compra + envío de compra + protección, si aplican.
+Beneficio neto = margen bruto − costes. ROI = beneficio neto / precio de compra.
+Cifras estimadas.
 """
 
 from __future__ import annotations
@@ -28,6 +41,7 @@ from wallapop_intel.config import (
     BUYER_PROTECTION_RATE,
     HEURISTIC_VERSION,
     HEURISTIC_WEIGHTS,
+    INTERNATIONAL_SHIPPING_TIERS_KG,
     SHIPPING_TIERS_KG,
 )
 from wallapop_intel.models import ItemCard, LotOpportunity, Opportunity, Winner
@@ -324,19 +338,26 @@ def weight_kg_from_band(band: str) -> float:
     return mapping.get(band, 1.5)
 
 
-def shipping_cost_eur(weight_kg: float, *, conservative: bool = True) -> tuple[float, str]:
+def shipping_cost_eur(
+    weight_kg: float,
+    *,
+    conservative: bool = True,
+    is_international: bool = False,
+) -> tuple[float, str]:
+    tiers = INTERNATIONAL_SHIPPING_TIERS_KG if is_international else SHIPPING_TIERS_KG
+    scope = "internacional" if is_international else "nacional"
     w = max(0.01, weight_kg)
-    for max_kg, low, high, default in SHIPPING_TIERS_KG:
+    for max_kg, low, high, _default in tiers:
         if w <= max_kg:
             cost = high if conservative else low
             if low == high:
-                detail = f"tramo ≤{max_kg} kg tarifa fija {cost:.2f} EUR"
+                detail = f"envío {scope}, tramo ≤{max_kg:g} kg tarifa fija {cost:.2f} EUR"
             else:
-                detail = f"tramo ≤{max_kg} kg rango {low:.2f}-{high:.2f} EUR"
+                detail = f"envío {scope}, tramo ≤{max_kg:g} kg rango {low:.2f}-{high:.2f} EUR"
             return round(cost, 2), detail
-    last = SHIPPING_TIERS_KG[-1]
+    last = tiers[-1]
     cost = last[2] if conservative else last[1]
-    return round(cost, 2), f"tramo >20 kg rango orientativo {last[1]:.2f}-{last[2]:.2f} EUR"
+    return round(cost, 2), f"envío {scope}, tramo >20 kg rango orientativo {last[1]:.2f}-{last[2]:.2f} EUR"
 
 
 def buyer_protection_fee(sale_price: float) -> float:
@@ -354,15 +375,20 @@ def estimate_resell_profit(
     other_costs: float = 0.0,
     conservative_shipping: bool = True,
     weight_band: str | None = None,
+    is_international: bool = False,
 ) -> dict[str, Any]:
     outbound = 0.0
     inbound = 0.0
     ship_notes: list[str] = []
     if include_outbound_shipping:
-        outbound, note = shipping_cost_eur(weight_kg, conservative=conservative_shipping)
+        outbound, note = shipping_cost_eur(
+            weight_kg, conservative=conservative_shipping, is_international=is_international
+        )
         ship_notes.append(f"Envío venta: {note}")
     if include_inbound_shipping:
-        inbound, note = shipping_cost_eur(weight_kg, conservative=conservative_shipping)
+        inbound, note = shipping_cost_eur(
+            weight_kg, conservative=conservative_shipping, is_international=is_international
+        )
         ship_notes.append(f"Envío compra: {note}")
     protection = buyer_protection_fee(expected_resale_price) if include_buyer_protection else 0.0
     gross = expected_resale_price - purchase_price
@@ -394,5 +420,6 @@ def estimate_resell_profit(
         "total_costs": round(total_costs, 2),
         "weight_kg_used": round(weight_kg, 2),
         "weight_band": weight_band,
+        "is_international": is_international,
         "assumptions": assumptions,
     }

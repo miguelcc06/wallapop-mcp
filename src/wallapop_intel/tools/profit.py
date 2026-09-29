@@ -22,9 +22,10 @@ def register(mcp: FastMCP) -> None:
     async def wp_estimate_profit(params: EstimateProfitInput) -> ProfitEstimateResponse:
         """Calcula margen bruto, costes estimados y beneficio neto al revender en Wallapop.
 
-        Resta envío Wallapop Envíos según peso (tramos <2 kg, 2-5, 5-10, 10-20, >20),
-        protección comprador orientativa (~2.50 EUR + 5% del precio de venta) y otros gastos.
-        Devuelve ROI sobre el precio de compra.
+        Resta envío Wallapop Envíos según peso (tramos <2 kg, 2-5, 5-10, 10-20, >20).
+        Con is_international=true usa las tarifas transfronterizas (p. ej. Portugal o Italia).
+        Resta también la protección comprador (~2.50 EUR + 5% del precio de venta) y otros gastos.
+        Beneficio neto = margen bruto − costes. ROI = beneficio neto / precio de compra.
 
         Indica weight_kg o weight_band. Sin ambos, asume tramo under_2kg (1.5 kg).
 
@@ -55,22 +56,27 @@ def register(mcp: FastMCP) -> None:
                 other_costs=params.other_costs,
                 conservative_shipping=params.conservative_shipping,
                 weight_band=band_label,
+                is_international=params.is_international,
             )
             roi = result["roi_percent"]
             roi_line = f"{roi:.1f}%" if roi is not None else "n/d (compra a 0 EUR)"
+            shipping_scope = "internacional" if params.is_international else "nacional"
             summary = (
                 f"# Rentabilidad reventa\n\n"
                 f"| Concepto | EUR |\n| --- | ---: |\n"
                 f"| Compra | {params.purchase_price:.2f} |\n"
+                f"| Coste de adquisición | {result['total_acquisition_cost']:.2f} |\n"
                 f"| Venta esperada | {params.expected_resale_price:.2f} |\n"
                 f"| Margen bruto | {result['gross_margin']:.2f} |\n"
-                f"| Envío venta | {result['outbound_shipping_eur']:.2f} |\n"
-                f"| Envío compra | {result['inbound_shipping_eur']:.2f} |\n"
+                f"| Envío venta ({shipping_scope}) | {result['outbound_shipping_eur']:.2f} |\n"
+                f"| Envío compra ({shipping_scope}) | {result['inbound_shipping_eur']:.2f} |\n"
                 f"| Protección comprador | {result['buyer_protection_eur']:.2f} |\n"
                 f"| Otros | {result['other_costs']:.2f} |\n"
+                f"| Costes totales | {result['total_costs']:.2f} |\n"
                 f"| **Beneficio neto** | **{result['net_profit']:.2f}** |\n"
                 f"| **ROI** | **{roi_line}** |\n\n"
-                f"Peso usado: {result['weight_kg_used']} kg ({band_label or 'por peso'}).\n\n"
+                f"Peso usado: {result['weight_kg_used']} kg ({band_label or 'por peso'}). "
+                f"Envío {shipping_scope}.\n\n"
                 + "\n".join(f"- {a}" for a in result["assumptions"])
             )
             return ProfitEstimateResponse(
@@ -85,8 +91,11 @@ def register(mcp: FastMCP) -> None:
                 buyer_protection_eur=result["buyer_protection_eur"],
                 other_costs=result["other_costs"],
                 total_costs=result["total_costs"],
+                total_acquisition_cost=result["total_acquisition_cost"],
+                is_international=params.is_international,
                 weight_kg_used=result["weight_kg_used"],
                 weight_band=band_label,
+                is_international=result["is_international"],
                 assumptions=result["assumptions"],
                 note=note,
             )

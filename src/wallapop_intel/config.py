@@ -100,30 +100,26 @@ HEURISTIC_WEIGHTS = {
     "winner_min_samples": 3,
 }
 
-# Protección Wallapop aproximada que paga el comprador: fijo + porcentaje del precio del artículo.
-# No es la tarifa del checkout (depende del importe y puede tener topes). Sept-2026.
-PROTECTION_FIXED_EUR = 2.5
-PROTECTION_RATE = 0.05
-
-# Tarifas orientativas de Wallapop Envíos en península, punto de entrega (media del rango
-# publicado por tramo). El precio real depende de operador, modalidad y destino.
-# Por encima de 30 kg el servicio es Envíos XL y no entra en esta tabla.
-SHIPPING_BANDS: tuple[dict[str, float | str], ...] = (
-    {"code": "0-2", "label": "0-2 kg", "max_kg": 2.0, "eur": 2.95},
-    {"code": "2-5", "label": "2-5 kg", "max_kg": 5.0, "eur": 3.99},
-    {"code": "5-10", "label": "5-10 kg", "max_kg": 10.0, "eur": 6.49},
-    {"code": "10-20", "label": "10-20 kg", "max_kg": 20.0, "eur": 10.49},
-    {"code": "20-30", "label": "20-30 kg", "max_kg": 30.0, "eur": 15.49},
-)
-
-# Wallapop Envíos (orientativo, sept-2026). Rango inferior/superior donde aplica.
+# Wallapop Envíos nacional (orientativo, sept-2026). Rango inferior/superior donde aplica.
+# (max_kg inclusive, min_eur, max_eur, default_eur)
 SHIPPING_TIERS_KG: list[tuple[float, float, float, float]] = [
-    # (max_kg_exclusive_upper, min_eur, max_eur, default_eur)
     (2.0, 2.95, 3.95, 3.45),
     (5.0, 4.95, 4.95, 4.95),
     (10.0, 7.95, 7.95, 7.95),
     (20.0, 9.95, 12.95, 11.45),
     (9999.0, 14.95, 19.95, 16.95),
 ]
+
+# Envío internacional / transfronterizo (p. ej. Portugal o Italia hacia España).
+# (max_kg inclusive, min_eur, max_eur, default_eur)
+INTERNATIONAL_SHIPPING_TIERS_KG: list[tuple[float, float, float, float]] = [
+    (2.0, 5.95, 6.95, 6.45),
+    (5.0, 7.95, 8.95, 8.45),
+    (10.0, 11.95, 11.95, 11.95),
+    (20.0, 16.95, 16.95, 16.95),
+    (9999.0, 24.95, 24.95, 24.95),
+]
+
+# Protección comprador: base fija + porcentaje del precio de venta.
 BUYER_PROTECTION_BASE_EUR = 2.50
 BUYER_PROTECTION_RATE = 0.05

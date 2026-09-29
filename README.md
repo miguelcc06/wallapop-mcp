@@ -122,6 +122,24 @@ Ejemplo de argumentos de búsqueda:
 
 La página siguiente usa el `next_cursor` devuelto en el campo `cursor`.
 
+### Lotes y rentabilidad
+
+`wp_search_lots` amplía la keyword con «lote pack piezas» (salvo que el texto ya traiga lote, pack, piezas, averiado, urge o «no enciende») y puntúa cada anuncio:
+
+- **signal_score**: pesos del título y, en los 6 primeros, de la descripción (lote, pack, para piezas, averiado, no enciende, urge…).
+- **price_score**: descuento frente a la mediana de la muestra.
+- **urgency_score**: urge, mudanza, liquidación.
+- **opportunity_score** = 0,45 × señal + 0,35 × precio + 0,20 × urgencia.
+
+`wp_estimate_profit` no llama a Wallapop. Con `purchase_price`, `expected_resale_price` y `weight_kg` o `weight_band` (`under_2kg`, `kg_2_5`, `kg_5_10`, `kg_10_20`, `over_20kg`):
+
+- Envío nacional orientativo por tramo (el extremo alto si `conservative_shipping` es true): ≤2 kg 2,95–3,95 €, ≤5 kg 4,95 €, ≤10 kg 7,95 €, ≤20 kg 9,95–12,95 €, por encima 14,95–19,95 €.
+- Envío internacional / transfronterizo (`is_international`, p. ej. Portugal o Italia hacia España): ≤2 kg 5,95–6,95 €, ≤5 kg 7,95–8,95 €, ≤10 kg 11,95 €, ≤20 kg 16,95 €, por encima 24,95 €.
+- Protección comprador ≈ 2,50 € + 5 % del precio de venta. Por defecto se resta como escenario conservador; en Wallapop la paga el comprador.
+- Margen bruto = venta − compra. Costes = envíos + protección + `other_costs`. Coste de adquisición = compra + envío de compra + protección, si aplican. Beneficio neto = margen bruto − costes. ROI = beneficio neto / precio de compra.
+
+Por defecto se resta el envío de la venta. `include_inbound_shipping` suma también el de la compra.
+
 ## Ritmo y errores
 
 El cliente espera al menos 500 ms, aplica jitter y reintenta 429 y 5xx respetando `Retry-After`. No sube de 1 req/s aunque se pida más en el entorno.
@@ -135,6 +153,7 @@ El cliente espera al menos 500 ms, aplica jitter y reintenta 429 y 5xx respetand
 - **Real** (fiabilidad `high`, método `api_counters`): `views`, `favorites` y `conversations` de `GET /items/{id}`.
 - **Estimado** (fiabilidad `low`, método `heuristic_v1`): el score cuando la ficha no trae counters. La búsqueda en listado no los trae; por eso el ranking pide fichas con un tope.
 - **Histórico**: solo existe desde el primer snapshot en SQLite. Una ausencia en la muestra no demuestra una venta.
+- **Lotes y rentabilidad**: `opportunity_score`, el envío y la protección son estimaciones. No son el importe del checkout.
 
 Detalle de la verificación en [RESEARCH.md](RESEARCH.md).
 
