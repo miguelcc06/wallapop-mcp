@@ -43,7 +43,7 @@ class Settings:
     jitter_ms: int
     max_retries: int
     timeout_s: float
-    db_path: Path
+    database_url: str
     snapshot_ttl_days: int
     sign_requests: bool
     enrich_html: bool
@@ -60,7 +60,10 @@ class Settings:
         min_delay = max(500, _env_int("WALLAPOP_MIN_DELAY_MS", 500))
         user = os.environ.get("WALLAPOP_USER_ID", "").strip() or None
         proxy = os.environ.get("WALLAPOP_PROXY", "").strip() or None
-        db = Path(os.environ.get("WALLAPOP_DB_PATH", "data/wallapop_intel.sqlite"))
+        db_url = os.environ.get(
+            "WALLAPOP_DATABASE_URL",
+            os.environ.get("DATABASE_URL", "postgresql://miguelcc06@localhost:5432/wallapop_intel"),
+        )
         transport = os.environ.get("WALLAPOP_TRANSPORT", "stdio").strip().lower()
         if transport not in {"stdio", "http", "streamable-http"}:
             transport = "stdio"
@@ -74,7 +77,7 @@ class Settings:
             jitter_ms=max(0, _env_int("WALLAPOP_JITTER_MS", 250)),
             max_retries=max(1, _env_int("WALLAPOP_MAX_RETRIES", 3)),
             timeout_s=_env_float("WALLAPOP_TIMEOUT_S", 20.0),
-            db_path=db,
+            database_url=db_url,
             snapshot_ttl_days=max(1, _env_int("WALLAPOP_SNAPSHOT_TTL_DAYS", 90)),
             sign_requests=_env_bool("WALLAPOP_SIGN_REQUESTS", False),
             enrich_html=_env_bool("WALLAPOP_ENRICH_HTML", False),
