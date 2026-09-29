@@ -23,8 +23,14 @@ import re
 from statistics import median
 from typing import Any
 
-from wallapop_intel.config import HEURISTIC_VERSION, HEURISTIC_WEIGHTS
-from wallapop_intel.models import ItemCard, Opportunity, Winner
+from wallapop_intel.config import (
+    BUYER_PROTECTION_BASE_EUR,
+    BUYER_PROTECTION_RATE,
+    HEURISTIC_VERSION,
+    HEURISTIC_WEIGHTS,
+    SHIPPING_TIERS_KG,
+)
+from wallapop_intel.models import ItemCard, LotOpportunity, Opportunity, Winner
 from wallapop_intel.normalize import age_days
 
 _STOP = {
@@ -204,3 +210,189 @@ def price_advice(your_price: float | None, med: float | None, age: float | None,
     if not tips:
         tips.append("No hay una acción urgente: precio, fotos y texto están en rango razonable respecto a la muestra.")
     return tips
+
+
+_LOT_SIGNALS: list[tuple[str, re.Pattern, float]] = [
+    ("lote", re.compile(r"\blotes?\b", re.I), 12.0),
+    ("pack", re.compile(r"\bpacks?\b", re.I), 10.0),
+    ("conjunto", re.compile(r"\bconjunto\b", re.I), 8.0),
+    ("para piezas", re.compile(r"para\s+piezas|solo\s+piezas|piezas\s+sueltas", re.I), 14.0),
+    ("repuestos", re.compile(r"\brepuestos?\b", re.I), 10.0),
+    ("averiado", re.compile(r"\baveriad[oa]s?\b|\broto?s?\b|\bestropead[oa]s?\b", re.I), 11.0),
+    ("no enciende", re.compile(r"no\s+enciende|no\s+funciona|no\s+arranca", re.I), 13.0),
+    ("para reparar", re.compile(r"para\s+reparar|reparar\s+o\s+piezas", re.I), 9.0),
+    ("urge", re.compile(r"\burge\b|\burgente\b|\bmudanza\b|\bliquidaci[oó]n\b", re.I), 15.0),
+    ("varios", re.compile(r"\bvarios\b|\bm[uú]ltiples\b|\bx\d+\b", re.I), 6.0),
+]
+
+
+def lot_signals(text: str) -> list[tuple[str, float]]:
+    if not text:
+        return []
+    hits: list[tuple[str, float]] = []
+    for label, pattern, weight in _LOT_SIGNALS:
+        if pattern.search(text):
+            hits.append((label, weight))
+    return hits
+
+
+def signal_score_from_text(title: str, description: str | None = None) -> tuple[float, list[str]]:
+    blob = f"{title} {description or ''}".strip()
+    hits = lot_signals(blob)
+    if not hits:
+        return 0.0, []
+    raw = sum(w for _, w in hits)
+    score = min(100.0, raw)
+    labels = [label for label, _ in hits]
+    return round(score, 2), labels
+
+
+def urgency_score(title: str, description: str | None = None) -> float:
+    blob = f"{title} {description or ''}".lower()
+    score = 0.0
+    if re.search(r"\burge\b|\burgente\b", blob):
+        score += 40.0
+    if re.search(r"mudanza|liquidaci", blob):
+        score += 25.0
+    if re.search(r"precio\s+negociable|bajo\s+precio|rebaj", blob):
+        score += 10.0
+    return min(100.0, score)
+
+
+def lot_opportunities(
+    cards: list[ItemCard],
+    *,
+    limit: int = 10,
+    min_score: float = 15.0,
+    descriptions: dict[str, str] | None = None,
+) -> tuple[float | None, list[LotOpportunity]]:
+    """Detecta lotes/packs/averiados y puntúa oportunidad compuesta."""
+    stats = price_stats(cards)
+    med = stats["median"]
+    desc_map = descriptions or {}
+    found: list[LotOpportunity] = []
+    for card in cards:
+        if card.reserved:
+            continue
+        desc = desc_map.get(card.id)
+        sig_score, labels = signal_score_from_text(card.title, desc)
+        if sig_score <= 0:
+            continue
+        price_score = 0.0
+        discount_ratio: float | None = None
+        if med and med > 0 and card.price_eur is not None and card.price_eur > 0:
+            if card.price_eur <= med:
+                discount_ratio = (med - card.price_eur) / med
+                price_score = min(100.0, discount_ratio * 120.0)
+            else:
+                over = (card.price_eur - med) / med
+                price_score = max(0.0, 20.0 - over * 40.0)
+        urg = urgency_score(card.title, desc)
+        composite = round(sig_score * 0.45 + price_score * 0.35 + urg * 0.20, 2)
+        if composite < min_score:
+            continue
+        why_parts = [f"Señales: {', '.join(labels)} (signal {sig_score})."]
+        if med and card.price_eur:
+            why_parts.append(f"Precio {card.price_eur:.0f} EUR vs mediana muestra {med:.0f} EUR.")
+        if urg >= 25:
+            why_parts.append(f"Urgencia estimada {urg:.0f}/100.")
+        found.append(
+            LotOpportunity(
+                item=card,
+                opportunity_score=composite,
+                signal_score=sig_score,
+                price_score=round(price_score, 2),
+                urgency_score=round(urg, 2),
+                signals=labels,
+                median_price=round(med, 2) if med else None,
+                discount_ratio=round(discount_ratio, 3) if discount_ratio is not None else None,
+                why=" ".join(why_parts),
+            )
+        )
+    found.sort(key=lambda row: row.opportunity_score, reverse=True)
+    return (round(med, 2) if med else None), found[:limit]
+
+
+def weight_kg_from_band(band: str) -> float:
+    mapping = {
+        "under_2kg": 1.5,
+        "kg_2_5": 3.5,
+        "kg_5_10": 7.5,
+        "kg_10_20": 15.0,
+        "over_20kg": 25.0,
+    }
+    return mapping.get(band, 1.5)
+
+
+def shipping_cost_eur(weight_kg: float, *, conservative: bool = True) -> tuple[float, str]:
+    w = max(0.01, weight_kg)
+    for max_kg, low, high, default in SHIPPING_TIERS_KG:
+        if w <= max_kg:
+            cost = high if conservative else low
+            if low == high:
+                detail = f"tramo ≤{max_kg} kg tarifa fija {cost:.2f} EUR"
+            else:
+                detail = f"tramo ≤{max_kg} kg rango {low:.2f}-{high:.2f} EUR"
+            return round(cost, 2), detail
+    last = SHIPPING_TIERS_KG[-1]
+    cost = last[2] if conservative else last[1]
+    return round(cost, 2), f"tramo >20 kg rango orientativo {last[1]:.2f}-{last[2]:.2f} EUR"
+
+
+def buyer_protection_fee(sale_price: float) -> float:
+    return round(BUYER_PROTECTION_BASE_EUR + BUYER_PROTECTION_RATE * max(0.0, sale_price), 2)
+
+
+def estimate_resell_profit(
+    *,
+    purchase_price: float,
+    expected_resale_price: float,
+    weight_kg: float,
+    include_outbound_shipping: bool = True,
+    include_inbound_shipping: bool = False,
+    include_buyer_protection: bool = True,
+    other_costs: float = 0.0,
+    conservative_shipping: bool = True,
+    weight_band: str | None = None,
+) -> dict[str, Any]:
+    outbound = 0.0
+    inbound = 0.0
+    ship_notes: list[str] = []
+    if include_outbound_shipping:
+        outbound, note = shipping_cost_eur(weight_kg, conservative=conservative_shipping)
+        ship_notes.append(f"Envío venta: {note}")
+    if include_inbound_shipping:
+        inbound, note = shipping_cost_eur(weight_kg, conservative=conservative_shipping)
+        ship_notes.append(f"Envío compra: {note}")
+    protection = buyer_protection_fee(expected_resale_price) if include_buyer_protection else 0.0
+    gross = expected_resale_price - purchase_price
+    total_costs = outbound + inbound + protection + other_costs
+    net = round(gross - total_costs, 2)
+    roi: float | None = None
+    if purchase_price > 0:
+        roi = round((net / purchase_price) * 100.0, 2)
+    assumptions = [
+        "Cifras orientativas; tarifas reales de Wallapop Envíos pueden variar por tamaño y campañas.",
+        *ship_notes,
+    ]
+    if include_buyer_protection:
+        assumptions.append(
+            f"Protección comprador estimada: {BUYER_PROTECTION_BASE_EUR:.2f} EUR + "
+            f"{BUYER_PROTECTION_RATE:.0%} del precio de venta = {protection:.2f} EUR "
+            "(suele pagarla el comprador; se resta aquí como escenario conservador)."
+        )
+    else:
+        assumptions.append("Protección comprador no restada.")
+    return {
+        "gross_margin": round(gross, 2),
+        "net_profit": net,
+        "roi_percent": roi,
+        "outbound_shipping_eur": outbound,
+        "inbound_shipping_eur": inbound,
+        "buyer_protection_eur": protection,
+        "other_costs": round(other_costs, 2),
+        "total_costs": round(total_costs, 2),
+        "weight_kg_used": round(weight_kg, 2),
+        "weight_band": weight_band,
+        "assumptions": assumptions,
+    }

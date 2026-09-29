@@ -93,6 +93,8 @@ El argumento de cada tool es un objeto `params`. Todas devuelven JSON estructura
 | `wp_market_analysis` | Mediana de la muestra y diff contra snapshots locales |
 | `wp_price_history` | Serie local de un anuncio o keyword |
 | `wp_opportunities` | Precios al menos un 22 % bajo la mediana de la muestra |
+| `wp_search_lots` | Lotes, packs, piezas, averiados y urgencias con score compuesto |
+| `wp_estimate_profit` | Margen neto, envíos Wallapop Envíos, protección comprador y ROI |
 | `wp_winning_products` | Clusters de títulos con demanda en la muestra |
 | `wp_watchlist_add` / `wp_watchlist_remove` | Vigilancia local |
 | `wp_watchlist_snapshot` | Lee ahora lo vigilado y lo guarda |

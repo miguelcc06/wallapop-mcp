@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Strict(BaseModel):
@@ -98,6 +98,61 @@ class PriceHistoryInput(_Strict):
 
 class OpportunityInput(MarketInput):
     max_results: int = Field(default=8, ge=1, le=20, description="Oportunidades a devolver")
+
+
+class SearchLotsInput(MarketInput):
+    max_results: int = Field(default=10, ge=1, le=20, description="Lotes/oportunidades a devolver")
+    min_opportunity_score: float = Field(
+        default=15.0,
+        ge=0,
+        le=100,
+        description="Filtra anuncios con score compuesto por debajo de este umbral",
+    )
+    append_lot_keywords: bool = Field(
+        default=True,
+        description="Si true, amplía la búsqueda con términos como lote, pack, para piezas",
+    )
+
+
+class WeightBand(str, Enum):
+    under_2kg = "under_2kg"
+    kg_2_5 = "kg_2_5"
+    kg_5_10 = "kg_5_10"
+    kg_10_20 = "kg_10_20"
+    over_20kg = "over_20kg"
+
+
+class EstimateProfitInput(_Strict):
+    purchase_price: float = Field(..., description="Precio de compra en EUR", ge=0, le=1_000_000)
+    expected_resale_price: float = Field(..., description="Precio de venta esperado en EUR", ge=0, le=1_000_000)
+    weight_kg: float | None = Field(
+        default=None,
+        description="Peso estimado del paquete en kg. Alternativa a weight_band",
+        ge=0.01,
+        le=500,
+    )
+    weight_band: WeightBand | None = Field(
+        default=None,
+        description="Tramo Wallapop Envíos si no conoces el peso exacto",
+    )
+    include_outbound_shipping: bool = Field(
+        default=True,
+        description="Resta el envío al vender (tú envías con Wallapop Envíos)",
+    )
+    include_inbound_shipping: bool = Field(
+        default=False,
+        description="Resta un envío equivalente al comprar con envío",
+    )
+    include_buyer_protection: bool = Field(
+        default=True,
+        description="Resta la protección comprador (~2.50€ + 5% del precio de venta) como coste conservador",
+    )
+    other_costs: float = Field(default=0.0, description="Gastos extra (embalaje, comisiones, etc.) en EUR", ge=0, le=100_000)
+    conservative_shipping: bool = Field(
+        default=True,
+        description="Si true, usa el extremo alto del tramo de envío cuando hay rango",
+    )
+    response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
 
 
 class WatchAddInput(_Strict):
@@ -264,6 +319,46 @@ class OpportunitiesResponse(BaseModel):
     summary: str
     median_price: float | None = None
     opportunities: list[Opportunity]
+    note: str
+
+
+class LotOpportunity(BaseModel):
+    item: ItemCard
+    opportunity_score: float
+    signal_score: float
+    price_score: float
+    urgency_score: float
+    signals: list[str]
+    median_price: float | None = None
+    discount_ratio: float | None = None
+    why: str
+
+
+class SearchLotsResponse(BaseModel):
+    summary: str
+    keywords: str
+    search_query: str
+    sample_size: int
+    median_price: float | None = None
+    lots: list[LotOpportunity]
+    note: str
+
+
+class ProfitEstimateResponse(BaseModel):
+    summary: str
+    purchase_price: float
+    expected_resale_price: float
+    gross_margin: float
+    net_profit: float
+    roi_percent: float | None
+    outbound_shipping_eur: float
+    inbound_shipping_eur: float
+    buyer_protection_eur: float
+    other_costs: float
+    total_costs: float
+    weight_kg_used: float
+    weight_band: str | None
+    assumptions: list[str]
     note: str
 
 
