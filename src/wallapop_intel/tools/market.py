@@ -99,7 +99,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="wp_price_history", title="Histórico de precio", annotations=_READ)
     async def wp_price_history(params: PriceHistoryInput) -> PriceHistoryResponse:
-        """Evolución de precio guardada en SQLite para un anuncio o una keyword.
+        """Evolución de precio guardada en PostgreSQL para un anuncio o una keyword.
 
         Si aún no hay filas y pasas item_id, toma un snapshot ahora y lo indica.
         No inventa precios anteriores a la primera captura.

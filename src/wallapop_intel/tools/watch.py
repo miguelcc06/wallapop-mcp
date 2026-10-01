@@ -45,7 +45,7 @@ _LIST = {
 def register(mcp: FastMCP) -> None:
     @mcp.tool(name="wp_watchlist_add", title="Añadir a vigilancia", annotations=_LOCAL_ADD)
     async def wp_watchlist_add(params: WatchAddInput) -> WatchResponse:
-        """Guarda un anuncio o una keyword en la watchlist local (SQLite).
+        """Guarda un anuncio o una keyword en la watchlist local (PostgreSQL).
 
         No llama a Wallapop. Repetir la misma clave actualiza la etiqueta.
 

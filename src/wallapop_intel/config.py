@@ -10,6 +10,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_DATABASE_URL = "postgresql://miguelcc06@localhost:5432/wallapop_intel"
+_SOCKET_CANDIDATES = (
+    Path("/var/run/postgresql/.s.PGSQL.5432"),
+    Path("/tmp/.s.PGSQL.5432"),
+)
+
+
+def _unix_socket_dir() -> Path | None:
+    for socket in _SOCKET_CANDIDATES:
+        if socket.exists():
+            return socket.parent
+    return None
+
+
+def resolve_database_url() -> str:
+    """WALLAPOP_DATABASE_URL, luego DATABASE_URL, luego socket unix o TCP local."""
+    for name in ("WALLAPOP_DATABASE_URL", "DATABASE_URL"):
+        raw = os.environ.get(name)
+        if raw is not None and raw.strip():
+            return raw.strip()
+    socket_dir = _unix_socket_dir()
+    if socket_dir is not None:
+        return f"postgresql://miguelcc06@/wallapop_intel?host={socket_dir}"
+    return DEFAULT_DATABASE_URL
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
@@ -60,10 +85,7 @@ class Settings:
         min_delay = max(500, _env_int("WALLAPOP_MIN_DELAY_MS", 500))
         user = os.environ.get("WALLAPOP_USER_ID", "").strip() or None
         proxy = os.environ.get("WALLAPOP_PROXY", "").strip() or None
-        db_url = os.environ.get(
-            "WALLAPOP_DATABASE_URL",
-            os.environ.get("DATABASE_URL", "postgresql://miguelcc06@localhost:5432/wallapop_intel"),
-        )
+        db_url = resolve_database_url()
         transport = os.environ.get("WALLAPOP_TRANSPORT", "stdio").strip().lower()
         if transport not in {"stdio", "http", "streamable-http"}:
             transport = "stdio"

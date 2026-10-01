@@ -5,7 +5,7 @@ description: Alimenta y consulta la watchlist local de Wallapop, detecta bajadas
 
 # Monitorización
 
-Servidor `wallapop_mcp`. La watchlist vive en SQLite (`WALLAPOP_DB_PATH`). `wp_watchlist_add`, `wp_watchlist_remove` y `wp_watchlist_list` no llaman a Wallapop. `wp_watchlist_snapshot` sí lee la red y guarda la captura. El histórico no existe antes de la primera captura: una serie vacía no es un precio plano.
+Servidor `wallapop_mcp`. La watchlist vive en PostgreSQL (`WALLAPOP_DATABASE_URL`, o `DATABASE_URL`, o el socket local). `wp_watchlist_add`, `wp_watchlist_remove` y `wp_watchlist_list` no llaman a Wallapop. `wp_watchlist_snapshot` sí lee la red y guarda la captura. El histórico no existe antes de la primera captura: una serie vacía no es un precio plano.
 
 `wp_watchlist_snapshot` procesa como máximo 8 entradas por llamada, en el orden en que las devuelve la lista. Si hay más, las demás no se han leído. No digas que toda la lista está actualizada.
 

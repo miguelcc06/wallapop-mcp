@@ -124,7 +124,7 @@ Tests unitarios: `pytest` 6 passed. `python -m py_compile` sobre el paquete.
 - Token bucket a ≤1 req/s, suelo 500 ms, jitter, 3 reintentos, `Retry-After` en 429/5xx.
 - Proxy opcional.
 - UA rotatorio de navegador.
-- SQLite con deduplicación por anuncio y minuto, purga a 90 días.
+- PostgreSQL con deduplicación por anuncio y minuto, purga a 90 días.
 - Caché de categorías 24 h.
 - Sin logs de cuerpos con datos de más; sin tokens porque no hay login.
 

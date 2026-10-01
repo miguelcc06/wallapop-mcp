@@ -95,7 +95,6 @@ def register(mcp: FastMCP) -> None:
                 is_international=params.is_international,
                 weight_kg_used=result["weight_kg_used"],
                 weight_band=band_label,
-                is_international=result["is_international"],
                 assumptions=result["assumptions"],
                 note=note,
             )

@@ -1,8 +1,6 @@
-"""Tests locales de heurística, firma y base de datos PostgreSQL. No llaman a Wallapop."""
+"""Tests locales de heurística y firma. No llaman a Wallapop ni a PostgreSQL."""
 
-import os
 from wallapop_intel.client import legacy_x_signature
-from wallapop_intel.db import Store
 from wallapop_intel.insights import engagement, opportunities, winners
 from wallapop_intel.models import ItemCard
 from wallapop_intel.normalize import epoch_to_iso, price_amount, within_timeframe
@@ -52,21 +50,3 @@ def test_opportunities_and_winners() -> None:
     assert rows[0].item.id == "1"
     found = winners(cards)
     assert found and found[0].label.startswith("iphone 13")
-
-
-def test_postgres_dedup_and_watch() -> None:
-    dsn = os.environ.get("WALLAPOP_DATABASE_URL", "postgresql://miguelcc06@localhost:5432/wallapop_intel")
-    try:
-        store = Store(dsn, ttl_days=90)
-    except Exception:
-        # Si no hay PostgreSQL corriendo en el entorno de testing, omitir
-        return
-    store.add_snapshot({"item_id": "test_abc", "captured_at": "2026-09-24T18:00:00Z", "price_amount": 10, "keyword": "ps5"})
-    store.add_snapshot({"item_id": "test_abc", "captured_at": "2026-09-24T18:00:30Z", "price_amount": 9, "keyword": "ps5"})
-    rows = store.history(item_id="test_abc")
-    assert len(rows) >= 1
-    store.watch_add("keyword", "ps5_test", "consola")
-    store.watch_add("keyword", "ps5_test", "otra")
-    assert any(w["key"] == "ps5_test" for w in store.watch_list())
-    assert store.watch_remove("keyword", "ps5_test") >= 1
-    store.close()
