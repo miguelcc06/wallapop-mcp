@@ -50,3 +50,26 @@ def test_opportunities_and_winners() -> None:
     assert rows[0].item.id == "1"
     found = winners(cards)
     assert found and found[0].label.startswith("iphone 13")
+
+
+def test_shippable_detection() -> None:
+    from wallapop_intel.normalize import to_card
+
+    # Caso en que el vendedor desactiva el envío aunque el producto sea apto
+    raw_no_user_shipping = {
+        "id": "item1",
+        "title": "Impresora 3D",
+        "supports_shipping": {"flag": False},
+        "shipping": {"item_is_shippable": True, "user_allows_shipping": False},
+    }
+    assert to_card(raw_no_user_shipping).shippable is False
+
+    # Caso en que el vendedor sí permite envío
+    raw_with_shipping = {
+        "id": "item2",
+        "title": "Impresora 3D con envío",
+        "supports_shipping": {"flag": True},
+        "shipping": {"item_is_shippable": True, "user_allows_shipping": True},
+    }
+    assert to_card(raw_with_shipping).shippable is True
+

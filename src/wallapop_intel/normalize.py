@@ -103,6 +103,22 @@ def created_raw(raw: dict[str, Any]) -> Any:
     return raw.get("created_at") or raw.get("creation_date") or raw.get("modified_date") or raw.get("modified_at")
 
 
+def is_shippable(raw: dict[str, Any]) -> bool | None:
+    su = raw.get("supports_shipping")
+    su_flag = su.get("flag") if isinstance(su, dict) else (su if isinstance(su, bool) else None)
+    shipping = raw.get("shipping") if isinstance(raw.get("shipping"), dict) else {}
+    uas = shipping.get("user_allows_shipping")
+    iis = shipping.get("item_is_shippable")
+
+    if su_flag is False or uas is False or iis is False:
+        return False
+    if su_flag is True or (uas is True and (iis is True or iis is None)):
+        return True
+    if iis is True and uas is None and su_flag is None:
+        return True
+    return None
+
+
 def to_card(raw: dict[str, Any]) -> ItemCard:
     amount, currency = price_amount(raw)
     ctr = counters(raw)
@@ -111,7 +127,6 @@ def to_card(raw: dict[str, Any]) -> ItemCard:
     cat = raw.get("category_id")
     if cat is None and isinstance(raw.get("taxonomy"), list) and raw["taxonomy"]:
         cat = raw["taxonomy"][0].get("id")
-    shipping = raw.get("shipping") if isinstance(raw.get("shipping"), dict) else {}
     reserved = raw.get("reserved")
     if isinstance(reserved, dict):
         reserved = reserved.get("flag")
@@ -127,7 +142,7 @@ def to_card(raw: dict[str, Any]) -> ItemCard:
         url=item_url(raw),
         created_at=epoch_to_iso(created_raw(raw)),
         reserved=bool(reserved) if isinstance(reserved, bool) else None,
-        shippable=bool(shipping.get("item_is_shippable")) if "item_is_shippable" in shipping else None,
+        shippable=is_shippable(raw),
         image_url=image_url(raw),
         views=ctr["views"],
         favorites=ctr["favorites"],
