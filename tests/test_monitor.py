@@ -33,7 +33,7 @@ def _pc(
     title: str = "HP ProDesk 600 G3 SFF i5",
     price: float = 40,
     city: str = "Madrid",
-    shippable: bool = True,
+    shippable: bool | None = True,
     description: str | None = "Torre SFF completa, enciende",
 ) -> dict:
     raw: dict = {
@@ -123,7 +123,32 @@ class FakeClient:
     ],
 )
 def test_sff_filter(title: str, description: str | None, price: float | None, expected: bool) -> None:
-    assert is_sff_candidate(title, description, price) is expected
+    assert is_sff_candidate(title, description, price, shippable=True) is expected
+
+
+@pytest.mark.parametrize("shippable", [False, None])
+def test_sff_candidate_requires_shipping(shippable: bool | None) -> None:
+    assert (
+        is_sff_candidate(
+            "HP ProDesk 600 G3 SFF i5",
+            "Equipo completo, enciende",
+            40,
+            shippable=shippable,
+        )
+        is False
+    )
+
+
+def test_sff_candidate_accepts_confirmed_shipping() -> None:
+    assert (
+        is_sff_candidate(
+            "HP ProDesk 600 G3 SFF i5",
+            "Equipo completo, enciende",
+            40,
+            shippable=True,
+        )
+        is True
+    )
 
 
 def test_schema_and_second_scan_does_not_realert(tmp_path: Path) -> None:
@@ -208,7 +233,7 @@ def test_description_from_detail_filters_parts(tmp_path: Path) -> None:
 
 
 def test_dry_run_prints_without_db_or_telegram(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    raw = _pc(price=42, city="Valencia", shippable=False)
+    raw = _pc(price=42, city="Valencia", shippable=True)
     client = FakeClient({"hp prodesk": _payload([raw])})
     store = SeenStore(tmp_path / "sff.db")
     sent: list[str] = []
@@ -222,11 +247,50 @@ def test_dry_run_prints_without_db_or_telegram(tmp_path: Path, capsys: pytest.Ca
         )
     )
     assert len(found) == 1
+    assert found[0].shippable is True
     assert sent == []
     assert not store.seen("sff1")
     printed = capsys.readouterr().out
     assert "HP ProDesk 600 G3 SFF i5" in printed
-    assert "📍 Solo en mano" in printed
+    assert "📦 Con envío" in printed
+    store.close()
+
+
+def test_listings_without_shipping_are_discarded(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    shippable = _pc(item_id="ok", title="HP ProDesk 600 G3 SFF i5", shippable=True)
+    hand_only = _pc(item_id="hand", title="HP EliteDesk 800 G3 Mini", shippable=False)
+    unknown = _pc(item_id="unknown", title="OptiPlex 3060 SFF", shippable=None)
+    client = FakeClient({"hp prodesk": _payload([shippable, hand_only, unknown])})
+    store = SeenStore(tmp_path / "sff.db")
+    sent: list[str] = []
+    found = asyncio.run(
+        scan_once(client, store=store, notify=sent.append, queries=("hp prodesk",))
+    )
+    assert [item.item_id for item in found] == ["ok"]
+    assert len(sent) == 1
+    assert "HP ProDesk 600 G3 SFF i5" in sent[0]
+    assert "📦 Con envío" in sent[0]
+    assert "📍 Solo en mano" not in sent[0]
+    assert "HP EliteDesk 800 G3 Mini" not in sent[0]
+    assert "OptiPlex 3060 SFF" not in sent[0]
+    assert store.seen("ok")
+    assert not store.seen("hand")
+    assert not store.seen("unknown")
+    assert client.detail_calls == []
+
+    dry_client = FakeClient({"hp prodesk": _payload([hand_only, unknown])})
+    dry = asyncio.run(
+        scan_once(
+            dry_client,
+            store=store,
+            notify=sent.append,
+            dry_run=True,
+            queries=("hp prodesk",),
+        )
+    )
+    assert dry == []
+    assert len(sent) == 1
+    assert capsys.readouterr().out == ""
     store.close()
 
 

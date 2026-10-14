@@ -1,8 +1,8 @@
 """Monitor determinista de PCs compactos / SFF en Wallapop por debajo de 50 €.
 
-Sin LLM: busca, filtra piezas y accesorios por palabras clave, deduplica en
-SQLite y avisa por Telegram. Pensado para un pase (`--once`) o un bucle
-(`--loop`) y para el timer systemd de cada 10 minutos.
+Sin LLM: busca, exige envío disponible, filtra piezas y accesorios por
+palabras clave, deduplica en SQLite y avisa por Telegram. Pensado para un
+pase (`--once`) o un bucle (`--loop`) y para el timer systemd de cada 10 minutos.
 """
 
 from __future__ import annotations
@@ -260,8 +260,15 @@ def is_sff_candidate(
     price: float | None = None,
     *,
     max_price: float = MAX_PRICE,
+    shippable: bool | None = None,
 ) -> bool:
-    """True si el anuncio parece un PC compacto dentro del precio y no una pieza."""
+    """True si el anuncio es un PC compacto con envío, dentro del precio y no una pieza.
+
+    Solo entra un anuncio con envío confirmado (``shippable is True``).
+    ``False`` (solo en mano) y ``None`` (envío desconocido) no son candidatos.
+    """
+    if shippable is not True:
+        return False
     if not price_in_range(price, max_price):
         return False
     return not is_spare_or_accessory(title, description)
@@ -530,12 +537,21 @@ async def collect_matches(
             if listing is None or listing.item_id in seen_ids:
                 continue
             seen_ids.add(listing.item_id)
+            # Sin envío confirmado no es candidato: no se pide la ficha ni se avisa.
+            if listing.shippable is not True:
+                continue
             if not price_in_range(listing.price, max_price):
                 continue
             description = await _description_for(client, listing)
             if description is not None:
                 listing = replace(listing, description=description)
-            if not is_sff_candidate(listing.title, listing.description, listing.price, max_price=max_price):
+            if not is_sff_candidate(
+                listing.title,
+                listing.description,
+                listing.price,
+                max_price=max_price,
+                shippable=listing.shippable,
+            ):
                 continue
             found.append(listing)
     if queries and errors == len(queries):
