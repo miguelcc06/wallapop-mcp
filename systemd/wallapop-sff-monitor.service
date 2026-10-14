@@ -1,0 +1,14 @@
+[Unit]
+Description=Monitor de PCs SFF en Wallapop por debajo de 50 EUR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/wallapop-mcp
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-%h/wallapop-mcp/.env
+ExecStart=%h/wallapop-mcp/.venv/bin/wallapop-monitor --once
+
+[Install]
+WantedBy=default.target

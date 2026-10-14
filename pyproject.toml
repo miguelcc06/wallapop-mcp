@@ -20,6 +20,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 wallapop-intel = "wallapop_intel.server:main"
+wallapop-monitor = "wallapop_intel.monitor:main"
 
 [build-system]
 requires = ["setuptools>=68"]

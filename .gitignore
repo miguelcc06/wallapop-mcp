@@ -5,6 +5,8 @@ __pycache__/
 .env
 data/*.sqlite
 data/*.sqlite-*
+data/*.db
+data/*.db-*
 *.egg-info/
 dist/
 build/

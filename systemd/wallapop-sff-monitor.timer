@@ -1,0 +1,11 @@
+[Unit]
+Description=Ejecuta el monitor de PCs SFF de Wallapop cada 10 minutos
+
+[Timer]
+OnCalendar=*:0/10
+AccuracySec=30s
+Persistent=true
+Unit=wallapop-sff-monitor.service
+
+[Install]
+WantedBy=timers.target
