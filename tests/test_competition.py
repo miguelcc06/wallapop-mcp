@@ -46,7 +46,7 @@ def test_product_type(title, kind) -> None:
 
 
 def test_psu_search_drops_computers() -> None:
-    good = "Fuente Alimentación HP Z230 240W"
+    good = "Fuente Alimentación HP EliteDesk 800 G2 240W"
     assert _kept(
         PSU, good, "PC HP ProDesk 600 G2 i5-6500", "Hp prodesk 600 g2",
         "Ordenador HP sobremesa", "HP ProDesk 600 G2 SFF i5-6500 8GB SSD 240GB",
@@ -119,9 +119,95 @@ def test_short_sample_gives_no_price_verdict() -> None:
 
 
 def test_reduced_query_keeps_brand_and_model() -> None:
-    assert reduced_query("HP ProDesk 600 G3 i5 7500 16GB RAM") == "hp prodesk 600 g3"
+    assert reduced_query("HP ProDesk 600 G3 i5 7500 16GB RAM") == "hp 600 g3"
     assert reduced_query("Placa base HP SPITFIRE 795231-001") == "placa base hp spitfire"
     assert reduced_query(CPU) == "procesador i5 6500"
+
+
+PC705 = "HP ProDesk 705 G4 AMD A6-9500"
+
+
+def test_computer_of_sister_line_counts_and_boards_do_not() -> None:
+    good = [
+        "Ordenador HP EliteDesk 705 G4 SFF",
+        "Ordenador de sobremesa HP EliteDesk 705 G4 SFF",
+        "HP EliteDesk 705 G4",
+        "HP EliteDesk 705 G4 Mini 16GB RAM",
+    ]
+    boards = [
+        "Placa Base para HP EliteDesk 705 G4 DM",
+        "BOARD HP ELITEDESK / PRODESK Mini G4 AMD",
+        "BOARD HP ELITEDESK 705 G4",
+        "Mainboard HP ProDesk 705 G4",
+    ]
+    assert [product_type(title) for title in boards] == ["placa"] * 4
+    assert _kept(PC705, *good, *boards, "HP EliteDesk 705 G3", "HP EliteDesk 800 G4") == good
+
+
+@pytest.mark.parametrize(
+    ("title", "query"),
+    [
+        (PC705, "hp 705 g4"),
+        ("EliteDesk 800 G2 SFF i5 8GB", "hp 800 g2"),
+        ("Dell OptiPlex 7050 i5 8GB", "dell 7050"),
+        (PSU, "fuente hp 600 g2"),
+        ("Placa base HP ProDesk 400 G3", "placa base hp 400 g3"),
+    ],
+)
+def test_reduced_query_uses_model_without_line(title, query) -> None:
+    assert reduced_query(title) == query
+
+
+@pytest.mark.parametrize("kind", ["Fuente", "Placa base"])
+def test_branded_parts_require_compatible_model_and_generation(kind) -> None:
+    good = [
+        f"{kind} HP EliteDesk 800 G2 SFF",
+        f"{kind} HP 600 G2",
+        f"{kind} HP ProDesk 600/800 G1 G2",
+    ]
+    bad = [
+        f"{kind} HP Z230 240W",
+        f"{kind} HP EliteDesk 800 G4 SFF",
+        f"{kind} HP ProDesk 600 G4",
+        f"{kind} HP ProDesk 400 G2",
+        f"{kind} HP EliteDesk 705 G2",
+        f"{kind} HP ProDesk",
+        f"{kind} Dell 600 G2",
+    ]
+    assert _kept(f"{kind} HP ProDesk 600 G2", *good, *bad) == good
+
+
+@pytest.mark.parametrize("ref", ["795231-001", "L77487-001", "D10-240P1A"])
+def test_branded_part_accepts_matching_reference(ref) -> None:
+    good = f"Fuente HP {ref}"
+    assert _kept(f"{PSU} {ref}", good, "Fuente HP 111111-001") == [good]
+    assert _kept(f"Fuente HP {ref}", good, "Fuente HP 240W") == [good]
+
+
+def test_incompatible_psus_give_no_price_advice() -> None:
+    rows = [_c(str(n), f"Fuente HP {model}") for n, model in enumerate(["Z230", "800 G4", "600 G4", "800 G2"])]
+    sample = filter_competitors(_c("mio1", PSU, 15.0, ME), rows, ME)
+    result = summarize(15.0, sample)
+    assert result["count"] == 1 and result["median"] is None
+    assert "No hay muestra comparable" in result["advice"]
+
+
+def test_pc_without_first_results_retries_with_model_query() -> None:
+    found = [_raw(str(p), f"HP EliteDesk 705 G4 SFF {p}", p, "otro") for p in (44.0, 45.0, 115.0)]
+
+    class Api(_Api):
+        async def get_item(self, item_id):
+            return _raw("mio1", PC705, 60.0, ME)
+
+        async def search(self, keywords, *, order_by):
+            self.searches.append((keywords, order_by))
+            rows = found if keywords == "hp 705 g4" else []
+            return {"data": {"section": {"payload": {"items": rows}}}}
+
+    api = Api([])
+    summary = _call(api, "wp_my_items", {})["summary"]
+    assert "Muestra comparable: 3 · mediana 45.00 EUR" in summary
+    assert [query for query, _ in api.searches] == [PC705, "hp 705 g4"]
 
 
 def _raw(item_id: str, title: str, price: float, user: str) -> dict:
