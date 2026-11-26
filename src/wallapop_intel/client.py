@@ -3,6 +3,10 @@
 Verificado el 2026-09-24: búsqueda, ficha, usuario, stats y categorías responden
 200 sin X-Signature desde este entorno, con ritmo ≤1 req/s. La paginación usa
 el JWT de meta.next_page como query `next_page` (start_cursor repite la página).
+
+Verificado el 2026-11-26: /users/{id} solo acepta el id hash (con el numérico
+responde 404, y 400 en /items y /stats). /users/{id}/items pagina con el valor
+de meta.next como query `since`.
 """
 
 from __future__ import annotations
@@ -11,11 +15,13 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import random
+import re
 import time
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 import httpx
 
@@ -43,6 +49,12 @@ ORDER_BY = {
     "most_relevance",
     "closest",
 }
+
+
+_USER_HASH = re.compile(r"(?=[0-9]*[a-z])[0-9a-z]{12}")
+_USER_SLUG = re.compile(r"[\w.~-]*-(\d+)")
+_NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
+_MAX_ITEM_PAGES = 10
 
 
 class WallapopError(Exception):
@@ -86,6 +98,7 @@ class WallapopClient:
             settings.jitter_ms / 1000.0,
         )
         self._client: httpx.AsyncClient | None = None
+        self._user_ids: dict[str, str] = {}
 
     async def __aenter__(self) -> WallapopClient:
         await self.open()
@@ -125,12 +138,23 @@ class WallapopClient:
         return headers
 
     async def request_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        await self.open()
-        assert self._client is not None
         clean = {k: v for k, v in (params or {}).items() if v is not None and v != ""}
         url = f"{self.settings.base_url}{path}"
         if clean:
             url = f"{url}?{urlencode(clean, doseq=True)}"
+        response = await self._get(url, path)
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise WallapopError(
+                "La API devolvió 200 pero el cuerpo no es JSON. "
+                "Reintenta; si persiste, el endpoint cambió."
+            ) from exc
+
+    async def _get(self, url: str, path: str) -> httpx.Response:
+        """GET con ritmo y reintentos. Devuelve la respuesta 200 o lanza WallapopError."""
+        await self.open()
+        assert self._client is not None
         last_error: Exception | None = None
         for attempt in range(self.settings.max_retries):
             await self._bucket.wait()
@@ -146,13 +170,7 @@ class WallapopClient:
                 continue
 
             if response.status_code == 200:
-                try:
-                    return response.json()
-                except ValueError as exc:
-                    raise WallapopError(
-                        "La API devolvió 200 pero el cuerpo no es JSON. "
-                        "Reintenta; si persiste, el endpoint cambió."
-                    ) from exc
+                return response
 
             if response.status_code in {429, 500, 502, 503, 504} and attempt + 1 < self.settings.max_retries:
                 retry_after = response.headers.get("Retry-After")
@@ -230,12 +248,77 @@ class WallapopClient:
         data = await self.request_json(f"/users/{user_id}/stats")
         return data if isinstance(data, dict) else {}
 
-    async def get_user_items(self, user_id: str) -> list[dict[str, Any]]:
-        data = await self.request_json(f"/users/{user_id}/items")
-        if isinstance(data, dict):
-            rows = data.get("data") or []
-            return [row for row in rows if isinstance(row, dict)]
-        return []
+    async def get_user_items(self, user_id: str, limit: int = 40) -> list[dict[str, Any]]:
+        """Anuncios publicados de un perfil (id hash), siguiendo meta.next hasta limit."""
+        path = f"/users/{user_id}/items"
+        items: dict[str, dict[str, Any]] = {}
+        since: str | None = None
+        for _ in range(_MAX_ITEM_PAGES):
+            payload = await self.request_json(path, {"since": since})
+            rows = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(rows, list):
+                raise WallapopError(f"Respuesta inesperada en {path}: falta la lista 'data'.")
+            before = len(items)
+            for row in rows:
+                if isinstance(row, dict) and row.get("id"):
+                    items.setdefault(str(row["id"]), row)
+            meta = payload.get("meta")
+            since = meta.get("next") if isinstance(meta, dict) else None
+            if not since or len(items) >= limit or len(items) == before:
+                break
+        return list(items.values())[:limit]
+
+    async def resolve_user_id(self, value: str) -> str:
+        """Convierte id hash, slug o URL de perfil en el id hash que pide la API v3.
+
+        El id numérico suelto no se puede convertir: la web solo sirve el perfil
+        con el slug exacto y la API no ofrece búsqueda por número.
+        """
+        raw = value.strip()
+        if raw in self._user_ids:
+            return self._user_ids[raw]
+        ref = raw
+        if "/" in raw:
+            parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+            host = parsed.hostname or ""
+            parts = [part for part in parsed.path.split("/") if part]
+            if not (host == "wallapop.com" or host.endswith(".wallapop.com")) or len(parts) < 2 or parts[0] != "user":
+                raise WallapopError(_user_ref_message(raw))
+            ref = unquote(parts[1])
+        if _USER_HASH.fullmatch(ref):
+            return ref
+        match = _USER_SLUG.fullmatch(ref)
+        if not match or ref.startswith("-"):
+            raise WallapopError(_user_ref_message(raw))
+        user_id = await self._user_id_from_profile(ref, match.group(1))
+        self._user_ids[raw] = user_id
+        return user_id
+
+    async def _user_id_from_profile(self, slug: str, number: str) -> str:
+        path = f"/user/{quote(slug)}"
+        try:
+            response = await self._get(f"{self.settings.web_origin}{path}", path)
+        except WallapopError as exc:
+            if exc.status_code != 404:
+                raise
+            raise WallapopError(
+                f"No existe el perfil {self.settings.web_origin}{path}. El slug tiene que ser exacto: "
+                "copia la URL completa del perfil o usa el id hash.",
+                404,
+            ) from exc
+        found = _NEXT_DATA.search(response.text)
+        try:
+            user = json.loads(found.group(1))["props"]["pageProps"]["user"] if found else None
+            user_id = str(user["id"])
+            web_slug = str(user["webSlug"])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise WallapopError(
+                f"No se pudo leer el id de usuario en {path}: la página cambió. "
+                "Pon el id hash directamente (campo user.id de la ficha de un anuncio tuyo)."
+            ) from exc
+        if not _USER_HASH.fullmatch(user_id) or not web_slug.endswith(f"-{number}"):
+            raise WallapopError(f"La página {path} no corresponde al perfil pedido. Usa el id hash.")
+        return user_id
 
     async def get_user_reviews(self, user_id: str) -> list[dict[str, Any]]:
         data = await self.request_json(f"/users/{user_id}/reviews")
@@ -244,37 +327,54 @@ class WallapopClient:
         return []
 
 
+def _user_ref_message(value: str) -> str:
+    reason = (
+        "es el id numérico antiguo, que la API v3 no acepta ni permite convertir"
+        if value.isdigit()
+        else "no es un id de usuario reconocible"
+    )
+    return (
+        f"El usuario '{value}' {reason}. Pon en WALLAPOP_USER_ID el id hash (12 caracteres, "
+        "campo user.id de la ficha de un anuncio tuyo, visible con wp_get_item como vendedor) "
+        "o la URL completa de tu perfil: https://es.wallapop.com/user/<nombre>-<número>."
+    )
+
+
 def _http_message(response: httpx.Response) -> str:
-    snippet = response.text[:280].replace("\n", " ")
+    url = response.request.url
+    snippet = response.text[:280].replace("\n", " ").strip() or "(cuerpo vacío)"
     code = response.status_code
+    where = f"HTTP {code} en GET {url.path}"
     if code == 403:
         return (
-            "HTTP 403: CloudFront o el edge rechazó la petición (IP no residencial o bot-score). "
+            f"{where}: CloudFront o el edge rechazó la petición (IP no residencial o bot-score). "
             "Activa WALLAPOP_PROXY con una IP residencial o espera y reduce la frecuencia. "
             f"Respuesta: {snippet}"
         )
     if code == 429:
         return (
-            "HTTP 429: rate limit. Espera el Retry-After y no superes 1 petición/segundo. "
+            f"{where}: rate limit. Espera el Retry-After y no superes 1 petición/segundo. "
             f"Respuesta: {snippet}"
         )
     if code == 404:
-        return (
-            "HTTP 404: recurso no encontrado. El anuncio puede haberse vendido o el id es incorrecto. "
-            f"Respuesta: {snippet}"
-        )
+        return f"{where}: recurso no encontrado. Puede haberse vendido o el id es incorrecto. Respuesta: {snippet}"
     if code == 400:
-        return (
-            "HTTP 400: parámetros o cabeceras rechazados. Revisa order_by, category_id y el cursor. "
-            "order_by 'relevance' no existe; usa 'most_relevance'. "
-            f"Respuesta: {snippet}"
-        )
+        params = ", ".join(url.params.keys()) or "ninguno"
+        hint = ""
+        if "order_by" in url.params:
+            hint = (
+                "Revisa order_by, category_id y el cursor. "
+                "order_by 'relevance' no existe; usa 'most_relevance'. "
+            )
+        elif url.path.startswith("/api/v3/users/"):
+            hint = "Comprueba el id de usuario: la API v3 usa el id hash, no el numérico. "
+        return f"{where}: petición rechazada (parámetros: {params}). {hint}Respuesta: {snippet}"
     if code >= 500:
         return (
-            f"HTTP {code}: fallo temporal de Wallapop. Reintenta más tarde; no subas la frecuencia. "
+            f"{where}: fallo temporal de Wallapop. Reintenta más tarde; no subas la frecuencia. "
             f"Respuesta: {snippet}"
         )
-    return f"HTTP {code} de Wallapop. Respuesta: {snippet}"
+    return f"{where}. Respuesta: {snippet}"
 
 
 def extract_items(payload: dict[str, Any]) -> list[dict[str, Any]]:

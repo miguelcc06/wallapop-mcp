@@ -79,7 +79,7 @@ Ejemplo de cliente (Claude Desktop / Cursor), ajusta la ruta:
 | Variable | Default | Uso |
 | --- | --- | --- |
 | `WALLAPOP_LATITUDE` / `WALLAPOP_LONGITUDE` | Madrid | Centro de búsqueda si la tool no recibe coordenadas |
-| `WALLAPOP_USER_ID` | vacío | Id público de tu perfil. Sin él, `wp_my_items` y `wp_my_item_advice` explican cómo configurarlo |
+| `WALLAPOP_USER_ID` | vacío | Id hash o URL completa de tu perfil (el id numérico solo no sirve). Sin él, `wp_my_items` y `wp_my_item_advice` explican cómo configurarlo |
 | `WALLAPOP_PROXY` | vacío | Proxy HTTP si CloudFront responde 403 |
 | `WALLAPOP_RATE_LIMIT_RPS` | `1` (techo duro) | Peticiones por segundo |
 | `WALLAPOP_MIN_DELAY_MS` | `500` (suelo duro) | Pausa mínima entre peticiones |
