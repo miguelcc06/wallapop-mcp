@@ -223,8 +223,8 @@ def register(mcp: FastMCP) -> None:
             SellerItemsResponse.
         """
         try:
-            rows = await client().get_user_items(params.user_id)
-            cards = [apply_engagement(to_card(row)) for row in rows[: params.limit]]
+            rows = await client().get_user_items(params.user_id, params.limit)
+            cards = [apply_engagement(to_card(row)) for row in rows]
             summary = f"# Anuncios de {params.user_id}\n\n" + bullets(cards)
             return SellerItemsResponse(
                 summary=summary,

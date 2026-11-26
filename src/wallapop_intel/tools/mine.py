@@ -18,6 +18,13 @@ _READ = {
 }
 
 
+async def _own_user_id() -> str:
+    configured = settings().user_id
+    if not configured:
+        missing_user()
+    return await client().resolve_user_id(configured)
+
+
 def register(mcp: FastMCP) -> None:
     @mcp.tool(name="wp_my_items", title="Mis anuncios en venta", annotations=_READ)
     async def wp_my_items(params: MyItemsInput) -> SellerItemsResponse:
@@ -30,13 +37,11 @@ def register(mcp: FastMCP) -> None:
             SellerItemsResponse. El summary incluye la sugerencia de cada uno.
         """
         try:
-            user_id = settings().user_id
-            if not user_id:
-                missing_user()
-            rows = await client().get_user_items(user_id)
+            user_id = await _own_user_id()
+            rows = await client().get_user_items(user_id, params.limit)
             lines = [f"# Tus anuncios ({user_id})", ""]
             cards = []
-            for row in rows[: params.limit]:
+            for row in rows:
                 raw = await client().get_item(str(row.get("id")))
                 card = apply_engagement(to_card(raw))
                 snapshot_card(card, None, card.metrics_method, card.reliability)
@@ -46,7 +51,7 @@ def register(mcp: FastMCP) -> None:
                 tips = price_advice(card.price_eur, med, None, len(raw.get("images") or []), description_of(raw))
                 cards.append(card)
                 lines.append(f"## {card.title} ({card.id})")
-                lines.append(f"- Precio {card.price_eur} EUR · visitas {card.views} · fav {card.favorites}")
+                lines.append(f"- Precio {card.price_eur} EUR · visitas {card.views} · fav {card.favorites} · conversaciones {card.conversations}")
                 lines.append(f"- Mediana de competencia (muestra {len(sample)}): {med}")
                 lines.append(f"- {tips[0] if tips else ''}")
                 lines.append("")
@@ -71,9 +76,7 @@ def register(mcp: FastMCP) -> None:
             AdviceResponse con recomendaciones concretas.
         """
         try:
-            user_id = settings().user_id
-            if not user_id:
-                missing_user()
+            user_id = await _own_user_id()
             raw = await client().get_item(params.item_id)
             owner = (raw.get("user") or {}).get("id")
             if owner and owner != user_id:

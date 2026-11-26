@@ -27,8 +27,8 @@ def fail(exc: Exception) -> None:
 
 def missing_user() -> None:
     raise ToolError(
-        "Falta WALLAPOP_USER_ID. Copia tu id público de Wallapop (está en la URL del perfil, "
-        "es.wallapop.com/user/...) a la variable de entorno y reinicia el servidor. "
+        "Falta WALLAPOP_USER_ID. Pon tu id hash de Wallapop (p. ej. 'nzx5y8xd2562') o la URL completa "
+        "de tu perfil (es.wallapop.com/user/<nombre>-<número>) y reinicia el servidor. "
         "Esta tool solo lee el perfil público; no inicia sesión."
     )
 
