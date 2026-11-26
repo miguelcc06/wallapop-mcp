@@ -20,6 +20,7 @@ import logging
 import random
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, unquote, urlencode, urlparse
 
@@ -54,7 +55,8 @@ ORDER_BY = {
 _USER_HASH = re.compile(r"(?=[0-9]*[a-z])[0-9a-z]{12}")
 _USER_SLUG = re.compile(r"[\w.~-]*-(\d+)")
 _NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
-_MAX_ITEM_PAGES = 10
+# Tope de seguridad contra cursores sin fin; si se alcanza, el listado se marca truncado.
+_MAX_ITEM_PAGES = 100
 
 
 class WallapopError(Exception):
@@ -63,6 +65,15 @@ class WallapopError(Exception):
     def __init__(self, message: str, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+@dataclass
+class ItemListing:
+    """Anuncios de un perfil y, si la lista no está completa, por qué."""
+
+    rows: list[dict[str, Any]]
+    truncated: str | None = None
+    error: WallapopError | None = None
 
 
 def legacy_x_signature(method: str, url_path_and_query: str, timestamp_ms: str) -> str:
@@ -87,6 +98,10 @@ class TokenBucket:
             self._next = max(now, self._next) + self.min_interval + jitter
         if delay:
             await asyncio.sleep(delay)
+
+    def defer(self, seconds: float) -> None:
+        """No dar turnos nuevos antes de que pasen estos segundos (Retry-After)."""
+        self._next = max(self._next, time.monotonic() + seconds)
 
 
 class WallapopClient:
@@ -179,6 +194,9 @@ class WallapopClient:
                 except ValueError:
                     wait = min(12.0, 1.2 * (2**attempt))
                 logger.warning("HTTP %s en %s; reintento en %.1fs", response.status_code, path, wait)
+                if retry_after:
+                    # Se respeta aunque quien llama cancele esta petición por falta de tiempo.
+                    self._bucket.defer(wait)
                 await asyncio.sleep(wait)
                 last_error = WallapopError(_http_message(response), response.status_code)
                 continue
@@ -248,25 +266,52 @@ class WallapopClient:
         data = await self.request_json(f"/users/{user_id}/stats")
         return data if isinstance(data, dict) else {}
 
-    async def get_user_items(self, user_id: str, limit: int = 40) -> list[dict[str, Any]]:
-        """Anuncios publicados de un perfil (id hash), siguiendo meta.next hasta limit."""
+    async def get_user_items(self, user_id: str, limit: int | None = None) -> list[dict[str, Any]]:
+        """Anuncios publicados de un perfil (id hash): todos, o los primeros limit."""
+        listing = await self.list_user_items(user_id, limit)
+        if listing.error:
+            raise listing.error
+        return listing.rows
+
+    async def list_user_items(
+        self, user_id: str, limit: int | None = None, timeout_s: float | None = None
+    ) -> ItemListing:
+        """Sigue meta.next hasta el final, limit o timeout_s (tiempo total).
+
+        Si falla la primera página lanza WallapopError. Un fallo posterior devuelve
+        lo leído, con el motivo en truncated.
+        """
         path = f"/users/{user_id}/items"
+        deadline = None if timeout_s is None else time.monotonic() + timeout_s
         items: dict[str, dict[str, Any]] = {}
         since: str | None = None
-        for _ in range(_MAX_ITEM_PAGES):
-            payload = await self.request_json(path, {"since": since})
-            rows = payload.get("data") if isinstance(payload, dict) else None
-            if not isinstance(rows, list):
-                raise WallapopError(f"Respuesta inesperada en {path}: falta la lista 'data'.")
+        for page in range(_MAX_ITEM_PAGES):
+            try:
+                left = None if deadline is None else max(0.0, deadline - time.monotonic())
+                payload = await asyncio.wait_for(self.request_json(path, {"since": since}), left)
+                rows = payload.get("data") if isinstance(payload, dict) else None
+                if not isinstance(rows, list):
+                    raise WallapopError(f"Respuesta inesperada en {path}: falta la lista 'data'.")
+            except (TimeoutError, WallapopError) as exc:
+                error = exc if isinstance(exc, WallapopError) else WallapopError(
+                    f"Sin tiempo para leer {path} (página {page + 1})."
+                )
+                if not page:
+                    raise error from exc
+                return ItemListing(list(items.values()), str(error), error)
             before = len(items)
             for row in rows:
                 if isinstance(row, dict) and row.get("id"):
                     items.setdefault(str(row["id"]), row)
             meta = payload.get("meta")
             since = meta.get("next") if isinstance(meta, dict) else None
-            if not since or len(items) >= limit or len(items) == before:
-                break
-        return list(items.values())[:limit]
+            if limit is not None and (len(items) > limit or (len(items) == limit and since)):
+                return ItemListing(list(items.values())[:limit], f"se pidió limit={limit} y hay más anuncios")
+            if not since:
+                return ItemListing(list(items.values()))
+            if len(items) == before:
+                return ItemListing(list(items.values()), "el cursor de paginación dejó de avanzar")
+        return ItemListing(list(items.values()), f"se alcanzó el tope de {_MAX_ITEM_PAGES} páginas")
 
     async def resolve_user_id(self, value: str) -> str:
         """Convierte id hash, slug o URL de perfil en el id hash que pide la API v3.

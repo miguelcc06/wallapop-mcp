@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from fastmcp import Client, FastMCP
 
+from wallapop_intel.client import ItemListing
 from wallapop_intel.competition import Candidate, filter_competitors, product_type, reduced_query, summarize
 from wallapop_intel.config import Settings
 from wallapop_intel.context import reset_for_tests
@@ -226,8 +227,8 @@ class _Api:
     async def resolve_user_id(self, value):
         return ME
 
-    async def get_user_items(self, user_id, limit):
-        return [{"id": "mio1"}]
+    async def list_user_items(self, user_id, limit=None, timeout_s=None):
+        return ItemListing([await self.get_item("mio1")])
 
     async def get_item(self, item_id):
         return _raw("mio1", PSU, 15.0, ME)

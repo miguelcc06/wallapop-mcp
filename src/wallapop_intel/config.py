@@ -78,6 +78,7 @@ class Settings:
     language: str
     base_url: str = "https://api.wallapop.com/api/v3"
     web_origin: str = "https://es.wallapop.com"
+    items_budget_s: float = 45.0
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -107,6 +108,7 @@ class Settings:
             http_host=os.environ.get("WALLAPOP_HTTP_HOST", "127.0.0.1"),
             http_port=_env_int("WALLAPOP_HTTP_PORT", 8000),
             language=os.environ.get("WALLAPOP_LANGUAGE", "es-ES"),
+            items_budget_s=max(1.0, _env_float("WALLAPOP_ITEMS_BUDGET_S", 45.0)),
         )
 
 
