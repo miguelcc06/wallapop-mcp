@@ -196,33 +196,15 @@ def winners(cards: list[ItemCard], limit: int = 5) -> list[Winner]:
     return ranked[:limit]
 
 
-def price_advice(your_price: float | None, med: float | None, age: float | None, photos: int, description: str | None) -> list[str]:
+def listing_tips(age: float | None, photos: int, description: str | None) -> list[str]:
+    """Consejos sobre la ficha que no dependen de la competencia."""
     tips: list[str] = []
-    if your_price is None:
-        tips.append("No hay precio legible. Revisa la ficha.")
-        return tips
-    if med:
-        ratio = your_price / med
-        if ratio > 1.15:
-            tips.append(
-                f"Tu precio ({your_price:.0f} EUR) está un {(ratio - 1):.0%} por encima de la mediana de la muestra ({med:.0f} EUR). "
-                "Prueba un precio cercano a la mediana si quieres rotar antes."
-            )
-        elif ratio < 0.8:
-            tips.append(
-                f"Tu precio ({your_price:.0f} EUR) está por debajo de la mediana ({med:.0f} EUR). "
-                "Si el estado es bueno, hay margen para subirlo sin salirte del mercado."
-            )
-        else:
-            tips.append(f"Tu precio ({your_price:.0f} EUR) está alineado con la mediana de la muestra ({med:.0f} EUR).")
     if age is not None and age > 14:
         tips.append(f"El anuncio tiene unos {age:.0f} días. Renovar título o precio suele recuperar visibilidad en anuncios parados.")
     if photos < 3:
         tips.append(f"Solo hay {photos} foto(s). Sube al menos 4 (frontal, detalle, etiqueta, defecto) para competir.")
     if not description or len(description) < 40:
         tips.append("La descripción es corta. Añade estado, capacidad, accesorios y si hay envío.")
-    if not tips:
-        tips.append("No hay una acción urgente: precio, fotos y texto están en rango razonable respecto a la muestra.")
     return tips
 
 
