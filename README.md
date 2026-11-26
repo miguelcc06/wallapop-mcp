@@ -83,6 +83,7 @@ Ejemplo de cliente (Claude Desktop / Cursor), ajusta la ruta:
 | `WALLAPOP_PROXY` | vacío | Proxy HTTP si CloudFront responde 403 |
 | `WALLAPOP_RATE_LIMIT_RPS` | `1` (techo duro) | Peticiones por segundo |
 | `WALLAPOP_MIN_DELAY_MS` | `500` (suelo duro) | Pausa mínima entre peticiones |
+| `WALLAPOP_ITEMS_BUDGET_S` | `45` | Tiempo total máximo de `wp_my_items`, en segundos, reintentos incluidos. Déjalo por debajo del timeout del cliente MCP |
 | `WALLAPOP_DATABASE_URL` | socket unix si existe, si no `postgresql://miguelcc06@localhost:5432/wallapop_intel` | Snapshots, watchlist y caché. `DATABASE_URL` es el segundo candidato |
 | `WALLAPOP_SIGN_REQUESTS` | `0` | Firma heredada. En sept-2026 no hace falta y puede romper la petición |
 | `WALLAPOP_ENRICH_HTML` | `0` | Reservado. La ficha JSON ya trae visitas y favoritos |
@@ -108,7 +109,7 @@ El argumento de cada tool es un objeto `params`. Todas devuelven JSON estructura
 | `wp_winning_products` | Clusters de títulos con demanda en la muestra |
 | `wp_watchlist_add` / `wp_watchlist_remove` | Vigilancia local |
 | `wp_watchlist_snapshot` | Lee ahora lo vigilado y lo guarda |
-| `wp_my_items` | Tus anuncios públicos, con pista de precio |
+| `wp_my_items` | Todos tus anuncios públicos, con métricas y pista de precio. Lo que no cabe en el presupuesto de tiempo sale como pendiente y se completa al repetir la llamada |
 | `wp_my_item_advice` | Diagnóstico de un anuncio tuyo |
 | `wp_search_lots` | Busca y clasifica lotes, packs, despieces y urgencias en la muestra |
 | `wp_estimate_profit` | Margen neto local. Sin importes de checkout usa un techo no oficial y fiabilidad baja |

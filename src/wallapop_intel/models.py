@@ -183,7 +183,7 @@ class WatchListInput(_Strict):
 
 
 class MyItemsInput(_Strict):
-    limit: int = Field(default=10, ge=1, le=20)
+    limit: int | None = Field(default=None, ge=1, description="Máximo de anuncios. Sin valor, todos los publicados")
     response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
 
 
@@ -273,6 +273,14 @@ class SellerItemsResponse(BaseModel):
     count: int
     items: list[ItemCard]
     note: str
+
+
+class MyItemsResponse(SellerItemsResponse):
+    pending_metrics: int = Field(default=0, description="Anuncios sin ficha (visitas) en esta respuesta")
+    pending_competition: int = Field(default=0, description="Anuncios sin comparación de precio en esta respuesta")
+    failed: int = Field(default=0, description="Anuncios con algún error al consultar")
+    truncated: bool = Field(default=False, description="True si la lista no incluye todos los anuncios")
+    truncated_reason: str | None = None
 
 
 class MetricsResponse(BaseModel):
