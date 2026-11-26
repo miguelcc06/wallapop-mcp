@@ -15,7 +15,7 @@ MIN_SAMPLE = 3
 # Sustantivos que nombran una pieza suelta.
 _PARTS = {
     "fuente": r"fuente|psu",
-    "placa": r"placa(?: base| madre)?|motherboard",
+    "placa": r"placa(?: base| madre)?|motherboard|mainboard|board",
     "lector": r"lector|grabador|grabadora",
     "cpu": r"procesador|microprocesador|cpu",
     "gpu": r"grafica|gpu",
@@ -36,6 +36,13 @@ _LOT = r"lotes?|conjuntos?"
 _BROKEN = r"reparar|piezas|despiece|rot[oa]s?|defectuos[oa]s?|averiad[oa]s?|no enciende|no arranca|no funciona"
 # Equipos vendidos sin componentes: no son comparables con uno completo.
 _INCOMPLETE = r"sin (?:ram|memoria|ssd|hdd|disco|procesador|cpu)"
+# «600 G2», «600/800 G2», «705 G4 SFF», «800 SFF G3» (ya sin signos).
+_GEN_MODELS = re.compile(
+    r"\b((?:\d{3} (?:[ouy] )?)+)(?:(?:sff|mt|dm|mini|tower) )?(g\d{1,2}(?: g\d{1,2})*)\b"
+)
+_PLAIN_MODEL = re.compile(rf"\b(?:{_PC_LINES}) (\d{{3,4}})\b|\b(z\d{{3}})\b")
+# Gamas que comparten fuente y placa dentro de la misma generación.
+_SHARED_PARTS = {"600": "600/800", "800": "600/800"}
 _STOP = {"de", "del", "la", "el", "para", "con", "en", "y", "a", "por", "vendo", "nuevo", "nueva", "usado"}
 
 
@@ -82,16 +89,63 @@ def key_tokens(title: str) -> list[str]:
     return [t for t in _norm(title).split() if t not in _STOP and len(t) > 1]
 
 
+def equipment_models(text: str) -> list[tuple[str, str | None]]:
+    """Pares (modelo, generación) de equipos de marca en un texto normalizado."""
+    models: list[tuple[str, str | None]] = [
+        (number, generation)
+        for found in _GEN_MODELS.finditer(text)
+        for number in re.findall(r"\d{3}", found.group(1))
+        for generation in found.group(2).split()
+    ]
+    numbers = {number for number, _ in models}
+    plain = (found.group(1) or found.group(2) for found in _PLAIN_MODEL.finditer(text))
+    models += [(number, None) for number in plain if number not in numbers]
+    return models
+
+
+def _part_refs(title: str) -> set[str]:
+    """Referencias de pieza: «795231-001», «L77487-001», «D10-240P1A»."""
+    refs = set()
+    for token in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", title.lower()):
+        compact = token.replace("-", "")
+        if re.fullmatch(r"\d{6}-\d{3}", token) or (
+            len(compact) >= 7
+            and len(re.findall(r"\d", compact)) >= 4
+            and re.search(r"[a-z]", compact)
+            and not re.match(rf"i[3579]|lga|ddr|ryzen|{_PC_LINES}", compact)
+        ):
+            refs.add(compact)
+    return refs
+
+
+def _model_query(text: str) -> list[str]:
+    """Marca, modelo y generación, sin la gama: «hp 705 g4»."""
+    models = equipment_models(text)
+    brand = _find(_BRANDS, text)
+    if brand:
+        name = brand.group(0)
+    else:
+        name = "hp" if _find("prodesk|elitedesk", text) else None
+    if not models or not name:
+        return []
+    return [name, *(part for part in models[0] if part)]
+
+
 def reduced_query(title: str) -> str:
     """Consulta corta para la segunda búsqueda: tipo de pieza, marca y modelo."""
     text = _norm(title)
-    if product_type(title) == "pc":
+    kind = product_type(title)
+    model_query = _model_query(text)
+    if model_query and kind in {"pc", "fuente", "placa"}:
+        prefix = {"fuente": ["fuente"], "placa": ["placa", "base"]}.get(kind, [])
+        return " ".join(prefix + model_query)
+    if kind == "pc":
         # Se corta en el procesador o la capacidad: queda marca y modelo.
         cut = _find(rf"intel|amd|{_CPU_FAMILY}|\d+ ?(?:gb|tb)", text)
         if cut and len(text[: cut.start()].split()) >= 2:
             text = text[: cut.start()]
         return " ".join(text.split()[:5])
-    if product_type(title) == "cpu" and (model := _CPU_MODEL.search(text)):
+    if kind == "cpu" and (model := _CPU_MODEL.search(text)):
         return f"procesador {model.group(0)}"
     # En piezas sobran las referencias numéricas largas y los adjetivos de montaje.
     words = [
@@ -111,21 +165,45 @@ def _is_broken(text: str) -> bool:
     return bool(_find(_BROKEN, text)) or bool(found and "teardown" in found["kinds"])
 
 
-def _same_product(own: str, other: str, kind: str) -> bool:
+def _brand_matches(own: str, other: str) -> bool:
+    brand = _find(_BRANDS, own)
+    if not brand:
+        return True
+    # Las gamas ProDesk y EliteDesk identifican a HP aunque no se nombre.
+    accepted = "hp|prodesk|elitedesk" if brand.group(0) == "hp" else brand.group(0)
+    return _find(accepted, other) is not None
+
+
+def _part_keys(text: str) -> set[tuple[str, str | None]]:
+    return {
+        (_SHARED_PARTS.get(number, number) if generation else number, generation)
+        for number, generation in equipment_models(text)
+    }
+
+
+def _same_product(own: str, other: str, kind: str, has_ref: bool, shared_ref: bool) -> bool:
     """Marca y modelo, con la exigencia que pide cada tipo (textos normalizados)."""
     if kind == "cpu":
         model = _CPU_MODEL.search(own)
         if model:  # «6500T» no es «6500»; vale «i5 6500» o «i5-6500».
             return _find(model.group(1), other) is not None
+    if kind in {"fuente", "placa"}:
+        if shared_ref:
+            return True
+        # Piezas de equipo de marca: solo modelo y generación compatibles.
+        keys = _part_keys(own)
+        if keys:
+            return bool(keys & _part_keys(other)) and _brand_matches(own, other)
+        # Una fuente identificada solo por su referencia exige esa referencia.
+        if kind == "fuente" and has_ref:
+            return False
     brand = _find(_BRANDS, own)
     if kind == "placa":  # El modelo manda: «Placa base Spitfire» vale sin la marca.
         generic = _STOP | {"placa", "base", "madre", "motherboard"}
         models = {t for t in own.split() if len(t) > 2 and t not in generic and not (brand and t == brand.group(0))}
         if models:
             return bool(models & set(other.split()))
-    # Las gamas ProDesk y EliteDesk identifican a HP aunque no se nombre.
-    accepted = "hp|prodesk|elitedesk" if brand and brand.group(0) == "hp" else brand and brand.group(0)
-    if brand and not _find(accepted, other):
+    if not _brand_matches(own, other):
         return False
     if kind == "pc":
         line = re.search(rf"\b(?:{_PC_LINES}) (\d{{3,4}})\b", own)
@@ -150,7 +228,9 @@ def _comparable(own_title: str, other_title: str) -> bool:
         return False
     kind = product_type(own_title)
     if kind:
-        return product_type(other_title) == kind and _same_product(own, other, kind)
+        refs = _part_refs(own_title)
+        shared_ref = bool(refs & _part_refs(other_title))
+        return product_type(other_title) == kind and _same_product(own, other, kind, bool(refs), shared_ref)
     tokens = set(key_tokens(own_title))
     shared = tokens & set(key_tokens(other_title))
     return bool(shared) and len(shared) >= min(2, len(tokens))
