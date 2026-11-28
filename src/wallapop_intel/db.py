@@ -49,6 +49,18 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         UNIQUE (kind, key)
     )
     """,
+    "ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION",
+    """
+    CREATE TABLE IF NOT EXISTS watch_alerts (
+        id BIGSERIAL PRIMARY KEY,
+        kind TEXT NOT NULL,
+        key TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        price_amount DOUBLE PRECISION NOT NULL,
+        alerted_at TIMESTAMPTZ NOT NULL,
+        UNIQUE (kind, key, item_id, price_amount)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS category_cache (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -68,6 +80,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 _TIMESTAMPTZ_COLUMNS = (
     ("snapshots", "captured_at"),
     ("watchlist", "created_at"),
+    ("watch_alerts", "alerted_at"),
     ("category_cache", "fetched_at"),
     ("metric_cache", "fetched_at"),
 )
@@ -115,7 +128,7 @@ def _as_bool(value: Any, default: bool | None = None) -> bool | None:
 
 def _public_row(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
-    for key in ("captured_at", "created_at", "fetched_at"):
+    for key in ("captured_at", "created_at", "fetched_at", "alerted_at"):
         value = out.get(key)
         if isinstance(value, datetime):
             out[key] = format_ts(value)
@@ -262,7 +275,9 @@ class Store:
 
         def run(cur: psycopg.Cursor[dict[str, Any]]) -> int:
             cur.execute("DELETE FROM snapshots WHERE captured_at < %s", (cutoff,))
-            return cur.rowcount
+            removed = cur.rowcount
+            cur.execute("DELETE FROM watch_alerts WHERE alerted_at < %s", (cutoff,))
+            return removed
 
         return self._with_cursor(run)
 
@@ -356,18 +371,75 @@ class Store:
 
         return self._with_cursor(run)
 
-    def watch_add(self, kind: str, key: str, label: str | None) -> None:
+    def watch_add(self, kind: str, key: str, label: str | None, target_price: float | None = None) -> None:
+        """Alta o actualización. Un target_price None conserva el umbral anterior."""
+
         def run(cur: psycopg.Cursor[dict[str, Any]]) -> None:
             cur.execute(
                 """
-                INSERT INTO watchlist (kind, key, label, created_at)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (kind, key) DO UPDATE SET label = EXCLUDED.label
+                INSERT INTO watchlist (kind, key, label, created_at, target_price)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (kind, key) DO UPDATE SET
+                    label = EXCLUDED.label,
+                    target_price = COALESCE(EXCLUDED.target_price, watchlist.target_price)
                 """,
-                (kind, key, label, datetime.now(timezone.utc)),
+                (kind, key, label, datetime.now(timezone.utc), target_price),
             )
 
         self._with_cursor(run)
+
+    def watch_set_target(self, kind: str, key: str, target_price: float | None) -> int:
+        """Fija o quita (None) el umbral de una entrada existente."""
+
+        def run(cur: psycopg.Cursor[dict[str, Any]]) -> int:
+            cur.execute(
+                "UPDATE watchlist SET target_price = %s WHERE kind = %s AND key = %s",
+                (target_price, kind, key),
+            )
+            return cur.rowcount
+
+        return self._with_cursor(run)
+
+    def alert_seen(self, kind: str, key: str, item_id: str, price: float) -> bool:
+        def run(cur: psycopg.Cursor[dict[str, Any]]) -> bool:
+            cur.execute(
+                "SELECT 1 FROM watch_alerts WHERE kind = %s AND key = %s AND item_id = %s AND price_amount = %s",
+                (kind, key, item_id, price),
+            )
+            return cur.fetchone() is not None
+
+        return bool(self._with_cursor(run))
+
+    def alert_mark(self, kind: str, key: str, item_id: str, price: float) -> None:
+        def run(cur: psycopg.Cursor[dict[str, Any]]) -> None:
+            cur.execute(
+                """
+                INSERT INTO watch_alerts (kind, key, item_id, price_amount, alerted_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (kind, key, item_id, price_amount) DO NOTHING
+                """,
+                (kind, key, item_id, price, datetime.now(timezone.utc)),
+            )
+
+        self._with_cursor(run)
+
+    def keyword_snapshots(self, keyword: str, since: datetime, limit: int = 50000) -> list[dict[str, Any]]:
+        """Snapshots de una keyword desde `since`, del más antiguo al más reciente."""
+
+        def run(cur: psycopg.Cursor[dict[str, Any]]) -> list[dict[str, Any]]:
+            cur.execute(
+                """
+                SELECT item_id, captured_at, title, price_amount, reserved
+                FROM snapshots
+                WHERE lower(keyword) = %s AND captured_at >= %s
+                ORDER BY captured_at ASC
+                LIMIT %s
+                """,
+                (keyword.lower(), since, limit),
+            )
+            return [_public_row(row) for row in cur.fetchall()]
+
+        return self._with_cursor(run)
 
     def watch_remove(self, kind: str, key: str) -> int:
         def run(cur: psycopg.Cursor[dict[str, Any]]) -> int:

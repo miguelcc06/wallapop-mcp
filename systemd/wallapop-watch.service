@@ -1,0 +1,14 @@
+[Unit]
+Description=Snapshot de la watchlist de Wallapop y alertas de precio por Telegram
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/wallapop-mcp
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-%h/wallapop-mcp/.env
+ExecStart=%h/wallapop-mcp/.venv/bin/wallapop-watch
+
+[Install]
+WantedBy=default.target

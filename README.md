@@ -107,8 +107,11 @@ El argumento de cada tool es un objeto `params`. Todas devuelven JSON estructura
 | `wp_search_lots` | Lotes, packs, piezas, averiados y urgencias con score compuesto |
 | `wp_estimate_profit` | Margen neto, envíos Wallapop Envíos, protección comprador y ROI |
 | `wp_winning_products` | Clusters de títulos con demanda en la muestra |
-| `wp_watchlist_add` / `wp_watchlist_remove` | Vigilancia local |
-| `wp_watchlist_snapshot` | Lee ahora lo vigilado y lo guarda |
+| `wp_flip_scan` | Pipeline de flipping en una llamada: lotes → margen → watchlist. Devuelve solo los lotes con ROI por encima de `min_roi_percent` |
+| `wp_watchlist_add` / `wp_watchlist_remove` | Vigilancia local. `wp_watchlist_add` acepta `target_price` (alerta de precio) |
+| `wp_watchlist_set_target` | Fija o quita el umbral de una entrada ya vigilada |
+| `wp_watchlist_snapshot` | Lee ahora lo vigilado, lo guarda y devuelve las alertas de precio cumplidas |
+| `wp_sell_time` | Cuánto tarda un anuncio en salir de la muestra, agregado desde los snapshots locales |
 | `wp_my_items` | Todos tus anuncios públicos, con métricas y pista de precio. Lo que no cabe en el presupuesto de tiempo sale como pendiente y se completa al repetir la llamada |
 | `wp_my_item_advice` | Diagnóstico de un anuncio tuyo |
 | `wp_search_lots` | Busca y clasifica lotes, packs, despieces y urgencias en la muestra |
@@ -166,6 +169,26 @@ La página siguiente usa el `next_cursor` devuelto en el campo `cursor`.
 - Margen bruto = venta − compra. Costes = envíos + protección + `other_costs`. Coste de adquisición = compra + envío de compra + protección, si aplican. Beneficio neto = margen bruto − costes. ROI = beneficio neto / precio de compra.
 
 Por defecto se resta el envío de la venta. `include_inbound_shipping` suma también el de la compra.
+
+### Pipeline de flipping
+
+`wp_flip_scan` encadena `wp_search_lots` → `wp_estimate_profit` → `wp_watchlist_add`. Pasa `resale_price_eur` (lo que sabes que sacas por el lote; sin él usa la mediana de la muestra, fiabilidad baja) y `min_roi_percent` (30 por defecto, estricto: igualar no pasa). Solo devuelve los lotes por encima del umbral, ordenados por ROI, y los guarda en la watchlist salvo `add_to_watchlist=false`. Con `alert_target_pct=10` cada entrada nace con alerta a un 10 % por debajo del precio actual.
+
+### Alertas de precio
+
+`wp_watchlist_add` con `target_price` (o `wp_watchlist_set_target`) fija un umbral por entrada. `wp_watchlist_snapshot` devuelve en `alerts` las entradas que lo cumplen: un ítem con precio ≤ umbral, o los anuncios no reservados de una keyword con precio ≤ umbral (los 5 más baratos). El aviso automático lo da el CLI `wallapop-watch`, pensado para un timer:
+
+```bash
+cp systemd/wallapop-watch.* ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now wallapop-watch.timer
+wallapop-watch --dry-run   # imprime las alertas nuevas sin enviar
+```
+
+Usa las mismas credenciales de Telegram que `wallapop-monitor`. Cada alerta se avisa una sola vez por anuncio y precio (tabla `watch_alerts`); si el precio baja otra vez, vuelve a avisar. El timer corre cada hora: con el límite global de 1 req/s y 8 entradas por pasada es suficiente. Un fallo en una entrada no impide las demás.
+
+### Tiempo hasta salir de la muestra
+
+`wp_sell_time` lee los snapshots locales de una keyword, los agrupa en pasadas (huecos > 10 min) y marca un anuncio como desaparecido si falta en las últimas `min_absent_runs` pasadas (2 por defecto). Devuelve la mediana de los desaparecidos, P25/P75 y la mediana Kaplan-Meier, que trata los anuncios aún activos como censurados. No es tiempo de venta confirmado: se mide desde el primer snapshot propio, y un anuncio también sale si se retira o lo empujan fuera los nuevos. `gone_reserved_share` alto (estaban reservados al verlos por última vez) sugiere venta real. Necesita varias pasadas de `wp_market_analysis` o `wp_watchlist_snapshot` sobre la misma keyword; con pocas salidas la fiabilidad es `very_low`/`low`.
 
 ## Ritmo y errores
 

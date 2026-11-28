@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 
 from wallapop_intel.context import client
 from wallapop_intel.insights import lot_opportunities
-from wallapop_intel.models import SearchLotsInput, SearchLotsResponse
+from wallapop_intel.models import ItemCard, LotOpportunity, SearchLotsInput, SearchLotsResponse
 from wallapop_intel.normalize import description_of
 from wallapop_intel.tools.common import fail
 from wallapop_intel.tools.market import _sample
@@ -31,6 +31,26 @@ def _build_query(keywords: str, append: bool) -> str:
     return f"{base} {_LOT_QUERY_SUFFIX}"
 
 
+async def find_lots(params: SearchLotsInput) -> tuple[str, list[ItemCard], float | None, list[LotOpportunity]]:
+    """Muestra, descripciones de los primeros anuncios y puntuación de lotes. Lo comparten wp_search_lots y wp_flip_scan."""
+    query = _build_query(params.keywords, params.append_lot_keywords)
+    cards = await _sample(params.model_copy(update={"keywords": query}), detail_cap=0)
+    descriptions: dict[str, str] = {}
+    for card in cards[:6]:
+        try:
+            raw = await client().get_item(card.id)
+            descriptions[card.id] = description_of(raw) or ""
+        except Exception:
+            descriptions[card.id] = ""
+    med, rows = lot_opportunities(
+        cards,
+        limit=params.max_results,
+        min_score=params.min_opportunity_score,
+        descriptions=descriptions,
+    )
+    return query, cards, med, rows
+
+
 def register(mcp: FastMCP) -> None:
     @mcp.tool(name="wp_search_lots", title="Buscar lotes y oportunidades", annotations=_READ)
     async def wp_search_lots(params: SearchLotsInput) -> SearchLotsResponse:
@@ -44,23 +64,7 @@ def register(mcp: FastMCP) -> None:
             SearchLotsResponse con métricas por anuncio y mediana de la muestra.
         """
         try:
-            query = _build_query(params.keywords, params.append_lot_keywords)
-            sample_params = params.model_copy(update={"keywords": query})
-            cards = await _sample(sample_params, detail_cap=0)
-            descriptions: dict[str, str] = {}
-            for card in cards[:6]:
-                try:
-                    raw = await client().get_item(card.id)
-                    descriptions[card.id] = description_of(raw) or ""
-                except Exception:
-                    descriptions[card.id] = ""
-
-            med, rows = lot_opportunities(
-                cards,
-                limit=params.max_results,
-                min_score=params.min_opportunity_score,
-                descriptions=descriptions,
-            )
+            query, cards, med, rows = await find_lots(params)
             summary = (
                 f"# Lotes y oportunidades «{params.keywords}»\n\n"
                 f"Consulta API: `{query}`. Muestra {len(cards)} · mediana {med} EUR.\n\n"
