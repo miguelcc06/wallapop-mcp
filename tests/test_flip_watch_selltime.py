@@ -161,10 +161,12 @@ def test_snapshot_evaluates_targets_and_isolates_failures() -> None:
 
     async def go():
         api = _api(_watch_handler(prices))
+        reset_for_tests(api.settings, db, api)
         try:
             return await run_snapshot(api, db)
         finally:
             await api.close()
+            reset_for_tests(None, None, None)
 
     report, alerts = asyncio.run(go())
     assert any(r.get("error") for r in report if r["key"] == "boom")

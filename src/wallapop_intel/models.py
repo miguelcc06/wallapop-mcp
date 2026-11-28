@@ -161,10 +161,6 @@ class EstimateProfitInput(_Strict):
         default=True,
         description="Si true, usa el extremo alto del tramo de envío cuando hay rango",
     )
-    is_international: bool = Field(
-        default=False,
-        description="Indica si el envío es internacional/transfronterizo, ej. desde Portugal o Italia",
-    )
     response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
 
 
@@ -392,8 +388,8 @@ class ProfitEstimateResponse(BaseModel):
     is_international: bool
     weight_kg_used: float
     weight_band: str | None
-    is_international: bool = False
     assumptions: list[str]
+    warnings: list[str] = Field(default_factory=list, description="Supuestos que pueden falsear el resultado")
     note: str
 
 

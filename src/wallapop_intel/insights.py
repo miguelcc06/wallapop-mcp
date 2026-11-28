@@ -400,6 +400,7 @@ def estimate_resell_profit(
         "buyer_protection_eur": protection,
         "other_costs": round(other_costs, 2),
         "total_costs": round(total_costs, 2),
+        "total_acquisition_cost": round(purchase_price + inbound, 2),
         "weight_kg_used": round(weight_kg, 2),
         "weight_band": weight_band,
         "is_international": is_international,
