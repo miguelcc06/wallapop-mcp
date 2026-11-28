@@ -33,7 +33,7 @@ def register(mcp: FastMCP) -> None:
             MetricsResponse con la explicación del método.
         """
         try:
-            raw = await client().get_item(params.item_id)
+            raw = await client().get_item(await client().resolve_item_id(params.item_id))
             card = to_card(raw)
             images = raw.get("images") or []
             bump = raw.get("bump") if isinstance(raw.get("bump"), dict) else {}

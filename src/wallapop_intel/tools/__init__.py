@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from wallapop_intel.tools import catalog, lots, market, mine, pipeline, profit, ranking, watch
+from wallapop_intel.tools import catalog, item_url, lots, market, mine, pipeline, profit, ranking, watch
 
 
 def register_all(mcp: FastMCP) -> None:
     catalog.register(mcp)
+    item_url.register(mcp)
     ranking.register(mcp)
     market.register(mcp)
     lots.register(mcp)

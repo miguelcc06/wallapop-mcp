@@ -102,7 +102,7 @@ def register(mcp: FastMCP) -> None:
             ItemDetailResponse. counters_are_real es true si la API envió counters.
         """
         try:
-            raw = await client().get_item(params.item_id)
+            raw = await client().get_item(await client().resolve_item_id(params.item_id))
             card = apply_engagement(to_card(raw))
             score, reliability, method, explanation = engagement(card)
             card = card.model_copy(update={"engagement_score": score, "reliability": reliability, "metrics_method": method})

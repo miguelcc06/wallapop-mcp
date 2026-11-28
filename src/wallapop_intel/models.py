@@ -55,7 +55,12 @@ class SearchInput(_Strict):
 
 
 class ItemIdInput(_Strict):
-    item_id: str = Field(..., description="Id Wallapop, p. ej. 'w67v2xx3896x'", min_length=4, max_length=32)
+    item_id: str = Field(
+        ...,
+        description="Id Wallapop (p. ej. 'w67v2xx3896x') o URL del anuncio (https://es.wallapop.com/item/<slug>)",
+        min_length=4,
+        max_length=300,
+    )
     response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
 
 
@@ -600,4 +605,34 @@ class FlipScanResponse(BaseModel):
     resale_source: str
     min_roi_percent: float
     deals: list[FlipDeal]
+    note: str
+
+
+class ItemFromUrlInput(_Strict):
+    url: str = Field(
+        ..., min_length=4, max_length=300, description="URL del anuncio, p. ej. https://es.wallapop.com/item/hp-prodesk-123"
+    )
+    resale_price_eur: float | None = Field(
+        default=None, gt=0, le=1_000_000, description="Precio de reventa esperado: añade la estimación de margen"
+    )
+    weight_band: WeightBand = Field(default=WeightBand.under_2kg, description="Tramo de envío para el margen")
+    response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
+
+
+class ItemFromUrlResponse(BaseModel):
+    summary: str
+    item_id: str
+    item: ItemCard
+    description: str | None = None
+    condition: str | None = None
+    characteristics: str | None = None
+    categories: list[str] = Field(default_factory=list)
+    location: dict[str, Any] = Field(default_factory=dict)
+    lot_kind: str | None = None
+    lot_signals: list[str] = Field(default_factory=list)
+    counters_are_real: bool
+    profit: dict[str, Any] | None = None
+    next_calls: dict[str, dict[str, Any]] = Field(
+        description="Parámetros listos para otras tools, con los datos de este anuncio"
+    )
     note: str
