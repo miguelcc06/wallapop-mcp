@@ -33,6 +33,12 @@ def register(mcp: FastMCP) -> None:
             ProfitEstimateResponse con desglose y supuestos documentados.
         """
         try:
+            warnings: list[str] = []
+            if params.weight_kg is None and params.weight_band is None:
+                warnings.append(
+                    "No se indicó peso: se asumió under_2kg (1,5 kg). Si el paquete pesa más, el envío y el "
+                    "ROI cambian; pasa weight_kg o weight_band."
+                )
             if params.weight_kg is not None:
                 weight = params.weight_kg
                 band_label = params.weight_band.value if params.weight_band else None
@@ -78,6 +84,7 @@ def register(mcp: FastMCP) -> None:
                 f"Peso usado: {result['weight_kg_used']} kg ({band_label or 'por peso'}). "
                 f"Envío {shipping_scope}.\n\n"
                 + "\n".join(f"- {a}" for a in result["assumptions"])
+                + "".join(f"\n- ⚠️ {w}" for w in warnings)
             )
             return ProfitEstimateResponse(
                 summary=summary,
@@ -96,6 +103,7 @@ def register(mcp: FastMCP) -> None:
                 weight_kg_used=result["weight_kg_used"],
                 weight_band=band_label,
                 assumptions=result["assumptions"],
+                warnings=warnings,
                 note=note,
             )
         except WallapopError as exc:

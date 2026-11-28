@@ -113,3 +113,34 @@ def test_item_from_url_returns_item_and_next_calls() -> None:
 def test_item_tools_accept_url() -> None:
     out = _call("wp_get_item", item_id=f"https://es.wallapop.com/item/{SLUG}")
     assert out["item"]["id"] == ITEM_ID
+
+
+# --- wp_estimate_profit (regresión: KeyError 'total_acquisition_cost') ------
+
+@pytest.mark.parametrize("weight", [{}, {"weight_kg": 3}, {"weight_kg": 12}, {"weight_band": "kg_5_10"}])
+@pytest.mark.parametrize("fmt", ["markdown", "json"])
+def test_estimate_profit_tool_all_weights(weight, fmt) -> None:
+    from wallapop_intel.tools import profit
+
+    async def go():
+        server = FastMCP("t")
+        profit.register(server)
+        async with Client(server) as session:
+            args = {"purchase_price": 100, "expected_resale_price": 200, "response_format": fmt, **weight}
+            return (await session.call_tool("wp_estimate_profit", {"params": args})).structured_content
+
+    out = asyncio.run(go())
+    assert out["total_acquisition_cost"] == 100
+    assert out["net_profit"] == round(100 - out["total_costs"], 2)
+    assert bool(out["warnings"]) == (not weight)
+
+
+def test_estimate_profit_shipping_varies_with_weight() -> None:
+    from wallapop_intel.insights import estimate_resell_profit
+
+    def ship(kg):
+        return estimate_resell_profit(purchase_price=50, expected_resale_price=100, weight_kg=kg)["outbound_shipping_eur"]
+
+    assert ship(1) < ship(3) < ship(8) < ship(15)
+    inbound = estimate_resell_profit(purchase_price=50, expected_resale_price=100, weight_kg=3, include_inbound_shipping=True)
+    assert inbound["total_acquisition_cost"] == 50 + inbound["inbound_shipping_eur"] > 50
