@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastmcp import FastMCP
 
 from wallapop_intel.client import WallapopError
@@ -15,8 +17,11 @@ from wallapop_intel.models import (
     OpportunityInput,
     PriceHistoryInput,
     PriceHistoryResponse,
+    SellTimeInput,
+    SellTimeResponse,
     WinnersResponse,
 )
+from wallapop_intel.selltime import compute_sell_time
 from wallapop_intel.tools.common import bullets, cards_from_search, fail, snapshot_card
 
 _READ = {
@@ -24,6 +29,14 @@ _READ = {
     "destructiveHint": False,
     "idempotentHint": True,
     "openWorldHint": True,
+}
+
+
+_LOCAL = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
 }
 
 
@@ -149,6 +162,58 @@ def register(mcp: FastMCP) -> None:
                 median_price=med,
                 opportunities=rows,
                 note="Heurística de precio sobre la muestra, no sobre todo Wallapop. Fiabilidad media.",
+            )
+        except Exception as exc:
+            fail(exc)
+
+    @mcp.tool(name="wp_sell_time", title="Tiempo hasta desaparecer", annotations=_LOCAL)
+    async def wp_sell_time(params: SellTimeInput) -> SellTimeResponse:
+        """Agrega los snapshots locales de una keyword: cuánto tarda un anuncio en salir de la muestra.
+
+        Un anuncio cuenta como desaparecido si falta en las últimas min_absent_runs
+        pasadas. Devuelve la mediana de los desaparecidos (sesgada a la baja: los
+        activos aún no cuentan) y la mediana Kaplan-Meier, que sí los incluye como
+        censurados (null si menos de la mitad ha desaparecido). No llama a Wallapop:
+        necesita snapshots previos (wp_market_analysis, wp_watchlist_snapshot).
+
+        Returns:
+            SellTimeResponse con agregados y anuncios. No es tiempo de venta confirmado.
+        """
+        try:
+            since = datetime.now(timezone.utc) - timedelta(days=params.days)
+            rows = store().keyword_snapshots(params.keywords.strip(), since)
+            stats = compute_sell_time(rows, min_absent_runs=params.min_absent_runs)
+            if stats["runs"] < params.min_absent_runs + 1:
+                summary = (
+                    f"# Tiempo de salida «{params.keywords}»\n\n"
+                    f"Solo {stats['runs']} pasadas de snapshot en {params.days} días: hacen falta al menos "
+                    f"{params.min_absent_runs + 1}. Repite wp_market_analysis o wp_watchlist_snapshot con la keyword "
+                    "a intervalos (p. ej. cada 6-12 h)."
+                )
+            else:
+                def days(value: float | None) -> str:
+                    return "n/d" if value is None else f"{value:g} d"
+
+                summary = (
+                    f"# Tiempo de salida «{params.keywords}»\n\n"
+                    f"{stats['runs']} pasadas en {stats['span_days']:g} días · {stats['items_tracked']} anuncios vistos · "
+                    f"desaparecidos {stats['gone']} · activos {stats['active']} · "
+                    f"vistos una sola vez {stats['single_sighting']}.\n\n"
+                    f"- Mediana de los desaparecidos: {days(stats['median_days_gone'])} "
+                    f"(P25 {days(stats['p25_days_gone'])} · P75 {days(stats['p75_days_gone'])})\n"
+                    f"- Mediana Kaplan-Meier (incluye activos): {days(stats['km_median_days'])}\n"
+                    f"- Fiabilidad: {stats['confidence']} ({stats['gone']} salidas)"
+                )
+            return SellTimeResponse(
+                summary=summary,
+                keywords=params.keywords,
+                **stats,
+                note=(
+                    "Mide permanencia en la muestra desde nuestro primer snapshot, no desde la publicación. "
+                    "Un anuncio también sale si lo retira el vendedor o lo empujan fuera anuncios nuevos "
+                    "(las muestras van por 'newest'), así que es una cota, no una venta confirmada. "
+                    "gone_reserved_share alto sugiere venta real."
+                ),
             )
         except Exception as exc:
             fail(exc)

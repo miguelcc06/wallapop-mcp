@@ -167,6 +167,13 @@ class WatchAddInput(_Strict):
     kind: str = Field(..., description="'item' o 'keyword'", pattern="^(item|keyword)$")
     key: str = Field(..., description="item_id o texto de búsqueda", min_length=2, max_length=120)
     label: str | None = Field(default=None, max_length=160)
+    target_price: float | None = Field(
+        default=None,
+        gt=0,
+        le=1_000_000,
+        description="Alerta de precio: avisa en wp_watchlist_snapshot cuando el precio sea <= este valor en EUR. "
+        "Sin valor se conserva el umbral que ya tuviera la entrada.",
+    )
 
 
 class WatchRemoveInput(_Strict):
@@ -405,6 +412,7 @@ class WinnersResponse(BaseModel):
 class WatchResponse(BaseModel):
     summary: str
     entries: list[dict[str, Any]]
+    alerts: list[dict[str, Any]] = Field(default_factory=list, description="Umbrales de precio cumplidos")
 
 
 class AdviceResponse(BaseModel):
@@ -507,4 +515,89 @@ class ProfitResponse(BaseModel):
     reliability: str
     method: str
     assumptions: list[str]
+    note: str
+
+
+class WatchTargetInput(_Strict):
+    kind: str = Field(..., pattern="^(item|keyword)$")
+    key: str = Field(..., min_length=2, max_length=120)
+    target_price: float | None = Field(
+        default=None, gt=0, le=1_000_000, description="Nuevo umbral en EUR. Sin valor, quita el umbral"
+    )
+
+
+class SellTimeInput(_Strict):
+    keywords: str = Field(..., min_length=2, max_length=120, description="Keyword con snapshots locales")
+    days: int = Field(default=30, ge=1, le=365, description="Ventana de snapshots a analizar")
+    min_absent_runs: int = Field(
+        default=2, ge=1, le=10, description="Pasadas seguidas sin verlo para darlo por desaparecido"
+    )
+    response_format: ResponseFormat = Field(default=ResponseFormat.markdown)
+
+
+class SellTimeResponse(BaseModel):
+    summary: str
+    keywords: str
+    runs: int
+    span_days: float
+    items_tracked: int
+    gone: int
+    active: int
+    single_sighting: int
+    median_days_gone: float | None = None
+    p25_days_gone: float | None = None
+    p75_days_gone: float | None = None
+    km_median_days: float | None = None
+    gone_reserved_share: float | None = None
+    confidence: str
+    items: list[dict[str, Any]]
+    note: str
+
+
+class FlipScanInput(SearchLotsInput):
+    min_roi_percent: float = Field(default=30.0, ge=-100, le=1000, description="ROI mínimo (%) para devolver el lote")
+    resale_price_eur: float | None = Field(
+        default=None,
+        gt=0,
+        le=1_000_000,
+        description="Precio de reventa esperado por lote. Sin valor se usa la mediana de la muestra (fiabilidad baja)",
+    )
+    max_buy_price_eur: float | None = Field(default=None, gt=0, le=1_000_000, description="Descarta lotes más caros")
+    weight_band: WeightBand = Field(default=WeightBand.under_2kg)
+    is_international: bool = Field(default=False)
+    include_inbound_shipping: bool = Field(default=True, description="Suma el envío de compra al coste")
+    other_costs: float = Field(default=0.0, ge=0, le=100_000)
+    add_to_watchlist: bool = Field(default=True, description="Guarda en la watchlist los lotes que pasan")
+    alert_target_pct: float | None = Field(
+        default=None,
+        ge=1,
+        le=90,
+        description="Si se indica, la watchlist recibe un target_price a este % por debajo del precio actual",
+    )
+
+
+class FlipDeal(BaseModel):
+    item: ItemCard
+    buy_price_eur: float
+    resale_price_eur: float
+    net_profit_eur: float
+    roi_percent: float | None
+    total_acquisition_cost_eur: float
+    opportunity_score: float
+    signals: list[str]
+    watched: bool = False
+    target_price: float | None = None
+    why: str
+
+
+class FlipScanResponse(BaseModel):
+    summary: str
+    keywords: str
+    search_query: str
+    sample_size: int
+    lots_found: int
+    resale_price_eur: float | None = None
+    resale_source: str
+    min_roi_percent: float
+    deals: list[FlipDeal]
     note: str
