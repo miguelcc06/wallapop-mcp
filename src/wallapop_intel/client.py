@@ -54,6 +54,7 @@ ORDER_BY = {
 
 _USER_HASH = re.compile(r"(?=[0-9]*[a-z])[0-9a-z]{12}")
 _USER_SLUG = re.compile(r"[\w.~-]*-(\d+)")
+_ITEM_HASH = re.compile(r"(?=[0-9]*[a-z])[0-9a-z]{8,16}")
 _NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 # Tope de seguridad contra cursores sin fin; si se alcanza, el listado se marca truncado.
 _MAX_ITEM_PAGES = 100
@@ -114,6 +115,7 @@ class WallapopClient:
         )
         self._client: httpx.AsyncClient | None = None
         self._user_ids: dict[str, str] = {}
+        self._item_ids: dict[str, str] = {}
 
     async def __aenter__(self) -> WallapopClient:
         await self.open()
@@ -339,6 +341,51 @@ class WallapopClient:
         self._user_ids[raw] = user_id
         return user_id
 
+    async def resolve_item_id(self, value: str) -> str:
+        """Convierte un id hash o una URL de anuncio (es.wallapop.com/item/<slug>) en el id de la API.
+
+        Con URL lee la página pública y busca el id en __NEXT_DATA__. El slug de la
+        URL lleva un número que no es el id de la API, por eso hace falta la página.
+        """
+        raw = value.strip()
+        if "/" not in raw and "." not in raw:
+            if _ITEM_HASH.fullmatch(raw):
+                return raw
+            raise WallapopError(_item_ref_message(raw))
+        if raw in self._item_ids:
+            return self._item_ids[raw]
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        host = parsed.hostname or ""
+        parts = [part for part in parsed.path.split("/") if part]
+        if not (host == "wallapop.com" or host.endswith(".wallapop.com")):
+            raise WallapopError(_item_ref_message(raw))
+        if "item" not in parts or parts.index("item") + 1 >= len(parts):
+            raise WallapopError(_item_ref_message(raw))
+        slug = unquote(parts[parts.index("item") + 1])
+        path = f"/item/{quote(slug)}"
+        try:
+            response = await self._get(f"{self.settings.web_origin}{path}", path)
+        except WallapopError as exc:
+            if exc.status_code != 404:
+                raise
+            raise WallapopError(
+                f"No existe {self.settings.web_origin}{path}: el anuncio se vendió o se retiró, o la URL está incompleta.",
+                404,
+            ) from exc
+        found = _NEXT_DATA.search(response.text)
+        try:
+            data = json.loads(found.group(1)) if found else None
+        except ValueError:
+            data = None
+        item_id = _find_item_id(data, slug)
+        if item_id is None:
+            raise WallapopError(
+                f"No se pudo leer el id del anuncio en {path}: la página cambió. "
+                "Pasa el id hash (12 caracteres) en su lugar."
+            )
+        self._item_ids[raw] = item_id
+        return item_id
+
     async def _user_id_from_profile(self, slug: str, number: str) -> str:
         path = f"/user/{quote(slug)}"
         try:
@@ -370,6 +417,34 @@ class WallapopClient:
         if isinstance(data, list):
             return [row for row in data if isinstance(row, dict)]
         return []
+
+
+def _find_item_id(node: Any, slug: str) -> str | None:
+    """Busca en el JSON de la página un objeto cuyo slug sea el de la URL y que tenga un id hash."""
+    fallback: str | None = None
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            ident = cur.get("id")
+            if isinstance(ident, str) and _ITEM_HASH.fullmatch(ident):
+                if slug in (cur.get("webSlug"), cur.get("web_slug"), cur.get("slug")):
+                    return ident
+            stack.extend(cur.values())
+            if fallback is None:
+                item = cur.get("item")
+                if isinstance(item, dict) and isinstance(item.get("id"), str) and _ITEM_HASH.fullmatch(item["id"]):
+                    fallback = item["id"]
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return fallback
+
+
+def _item_ref_message(value: str) -> str:
+    return (
+        f"'{value}' no es un anuncio reconocible. Usa el id hash (p. ej. 'w67v2xx3896x') "
+        "o la URL completa https://es.wallapop.com/item/<slug>."
+    )
 
 
 def _user_ref_message(value: str) -> str:

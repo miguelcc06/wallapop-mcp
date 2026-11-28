@@ -107,6 +107,7 @@ El argumento de cada tool es un objeto `params`. Todas devuelven JSON estructura
 | `wp_search_lots` | Lotes, packs, piezas, averiados y urgencias con score compuesto |
 | `wp_estimate_profit` | Margen neto, envíos Wallapop Envíos, protección comprador y ROI |
 | `wp_winning_products` | Clusters de títulos con demanda en la muestra |
+| `wp_item_from_url` | Pega la URL de un anuncio: devuelve la ficha (counters reales), categorías, ubicación, señales de lote y `next_calls` con los parámetros ya rellenados para el resto de tools. Con `resale_price_eur` añade el margen. `wp_get_item` y `wp_item_metrics` también aceptan la URL en `item_id` |
 | `wp_flip_scan` | Pipeline de flipping en una llamada: lotes → margen → watchlist. Devuelve solo los lotes con ROI por encima de `min_roi_percent` |
 | `wp_watchlist_add` / `wp_watchlist_remove` | Vigilancia local. `wp_watchlist_add` acepta `target_price` (alerta de precio) |
 | `wp_watchlist_set_target` | Fija o quita el umbral de una entrada ya vigilada |

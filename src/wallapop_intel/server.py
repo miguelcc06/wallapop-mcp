@@ -13,6 +13,7 @@ mcp = FastMCP(
         "Las visitas y favoritos de la ficha (wp_get_item / wp_item_metrics) son reales. "
         "El listado de búsqueda no los trae. El histórico de precios solo existe desde el primer snapshot local. "
         "wp_search_lots detecta lotes/averiados en la muestra; wp_estimate_profit calcula margen neto de reventa. "
+        "wp_item_from_url convierte la URL de un anuncio en su ficha y en parámetros para las demás tools. "
         "wp_flip_scan encadena lotes, margen y watchlist y devuelve solo los de ROI alto. "
         "wp_watchlist_add acepta target_price y wp_watchlist_snapshot devuelve las alertas de precio. "
         "wp_sell_time estima cuánto tarda un anuncio en salir de la muestra con los snapshots locales. "

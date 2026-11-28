@@ -163,3 +163,27 @@ def within_timeframe(raw: dict[str, Any], timeframe: str) -> bool:
     if timeframe == "lastMonth":
         return days <= 31.0
     return True
+
+
+def location_of(raw: dict[str, Any]) -> dict[str, Any]:
+    loc = raw.get("location") if isinstance(raw.get("location"), dict) else {}
+    out: dict[str, Any] = {}
+    for key, names in (
+        ("latitude", ("latitude", "lat")),
+        ("longitude", ("longitude", "lon", "lng")),
+        ("city", ("city",)),
+        ("postal_code", ("postal_code", "zip")),
+        ("region", ("region",)),
+    ):
+        for name in names:
+            if loc.get(name) not in (None, ""):
+                out[key] = loc[name]
+                break
+    return out
+
+
+def taxonomy_names(raw: dict[str, Any]) -> list[str]:
+    tax = raw.get("taxonomy")
+    if not isinstance(tax, list):
+        return []
+    return [str(node["name"]) for node in tax if isinstance(node, dict) and node.get("name")]
